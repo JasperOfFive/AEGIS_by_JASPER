@@ -23,6 +23,7 @@ export interface Finding {
   asn?: string;
   screenshot?: string;
   assignedAnalyst?: string;
+  raw?: any;
 }
 
 export interface Brand {

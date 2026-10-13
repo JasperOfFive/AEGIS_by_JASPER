@@ -12,7 +12,8 @@ import {
   Send,
   Flag,
   Sparkles,
-  Cpu
+  Cpu,
+  Share2
 } from 'lucide-react';
 import { SeverityBadge } from '../ui/SeverityBadge';
 import { StatusBadge } from '../ui/StatusBadge';

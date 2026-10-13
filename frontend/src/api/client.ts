@@ -3,7 +3,7 @@
  * Strongly-typed API client connecting the React frontend to the FastAPI backend.
  */
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '/api/v1';
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
