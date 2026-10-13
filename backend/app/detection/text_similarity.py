@@ -5,27 +5,23 @@ from rapidfuzz import fuzz
 from app.detection.normalization import normalize_text
 
 SUSPICIOUS_BIO_PHRASES = [
-    "customer support",
-    "customer care",
-    "help desk",
-    "official account",
-    "official page",
-    "dm for assistance",
-    "send direct message",
-    "dm us to resolve",
-    "toll free",
-    "helpline",
-    "call now",
-    "whatsapp us",
-    "24/7 support",
-    "account recovery",
-    "verify account",
-    "claim bonus",
-    "giveaway",
-    "airdrop",
-    "refund department",
-    "complaint cell",
-    "support desk"
+    # Fake Customer Support & Helpdesk
+    "customer support", "customer care", "help desk", "official account",
+    "official page", "dm for assistance", "send direct message", "dm us to resolve",
+    "toll free", "helpline", "call now", "whatsapp us", "24/7 support",
+    "support desk", "refund department", "complaint cell", "automated care",
+    # Credential & Seed Phrase Theft
+    "seed phrase", "private key", "mnemonic phrase", "wallet recovery",
+    "send phrase", "unlock wallet", "restore account", "enter password",
+    # Fraudulent Giveaways & Airdrops
+    "claim bonus", "giveaway", "airdrop", "free tokens", "claim reward",
+    "promo code bonus", "double your deposit", "token airdrop",
+    # Payment Demands & Unlicensed Lending
+    "send payment", "instant loan", "fast loan", "quick credit",
+    "cashapp transfer", "guaranteed profit", "dm to invest",
+    # Urgent Suspension & Verification Coercion
+    "account suspended", "urgent verification", "verify immediately",
+    "unfreeze account", "security alert verify", "click to unblock"
 ]
 
 

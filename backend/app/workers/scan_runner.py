@@ -54,86 +54,101 @@ class ScanRunner:
         has_partial_failures = False
         has_successes = False
 
-        for adapter in adapters:
-            # Check if this adapter is marked for simulated failure
-            should_fail = False
-            if simulate_unavailable_source:
-                sim_clean = simulate_unavailable_source.lower().strip()
-                if sim_clean in adapter.source_name.lower() or sim_clean in adapter.source_type.lower():
-                    should_fail = True
+        try:
+            for adapter in adapters:
+                # Check if this adapter is marked for simulated failure
+                should_fail = False
+                if simulate_unavailable_source:
+                    sim_clean = simulate_unavailable_source.lower().strip()
+                    if sim_clean in adapter.source_name.lower() or sim_clean in adapter.source_type.lower():
+                        should_fail = True
 
-            adapter_res: AdapterResult = adapter.collect(
-                brand_name=brand.name,
-                brand_id=brand.id,
-                simulate_failure=should_fail
-            )
+                adapter_res: AdapterResult = adapter.collect(
+                    brand_name=brand.name,
+                    brand_id=brand.id,
+                    simulate_failure=should_fail
+                )
 
-            # Persist source result
-            source_rec = ScanSourceResult(
-                scan_run_id=scan.id,
-                source_name=adapter_res.source_name,
-                status=adapter_res.status,
-                records_collected=adapter_res.records_collected,
-                started_at=adapter_res.started_at,
-                completed_at=adapter_res.completed_at,
-                error_message=adapter_res.error_message
-            )
-            db.add(source_rec)
-            db.flush()
+                # Persist source result
+                source_rec = ScanSourceResult(
+                    scan_run_id=scan.id,
+                    source_name=adapter_res.source_name,
+                    status=adapter_res.status,
+                    records_collected=adapter_res.records_collected,
+                    started_at=adapter_res.started_at,
+                    completed_at=adapter_res.completed_at,
+                    error_message=adapter_res.error_message
+                )
+                db.add(source_rec)
+                db.flush()
 
-            if adapter_res.status == "success":
-                has_successes = True
-                total_candidates_collected += len(adapter_res.candidates)
+                if adapter_res.status == "success":
+                    has_successes = True
+                    total_candidates_collected += len(adapter_res.candidates)
 
-                for cand_record in adapter_res.candidates:
-                    # 1. Upsert candidate
-                    candidate = CandidateService.get_or_create(db, cand_record)
+                    for cand_record in adapter_res.candidates:
+                        # 1. Upsert candidate
+                        candidate = CandidateService.get_or_create(db, cand_record)
 
-                    # 2. Record observation
-                    CandidateService.record_observation(
-                        db=db,
-                        scan_run_id=scan.id,
-                        candidate_id=candidate.id,
-                        provenance=cand_record.source_provenance,
-                        raw_payload=cand_record.to_dict()
-                    )
-
-                    # 3. Detection Engine Evaluation
-                    detection = evaluate_candidate(
-                        brand=brand,
-                        brand_assets=brand_assets,
-                        candidate=candidate
-                    )
-
-                    # 4. If identified as potential impersonation threat, upsert finding
-                    if detection.is_threat:
-                        FindingService.upsert_finding(
+                        # 2. Record observation
+                        CandidateService.record_observation(
                             db=db,
-                            brand_id=brand.id,
-                            candidate_id=candidate.id,
                             scan_run_id=scan.id,
-                            detection=detection
+                            candidate_id=candidate.id,
+                            provenance=cand_record.source_provenance,
+                            raw_payload=cand_record.to_dict()
                         )
-                        total_threats_flagged += 1
 
-            elif adapter_res.status == "failed":
-                has_partial_failures = True
-                logger.warning(f"Source adapter '{adapter.source_name}' reported failure: {adapter_res.error_message}")
+                        # 3. Detection Engine Evaluation
+                        detection = evaluate_candidate(
+                            brand=brand,
+                            brand_assets=brand_assets,
+                            candidate=candidate
+                        )
 
-        # Finalize scan run status
-        scan.completed_at = datetime.now(timezone.utc)
-        scan.total_candidates_found = total_candidates_collected
-        scan.total_findings_flagged = total_threats_flagged
+                        # 4. If identified as potential impersonation threat, upsert finding
+                        if detection.is_threat:
+                            FindingService.upsert_finding(
+                                db=db,
+                                brand_id=brand.id,
+                                candidate_id=candidate.id,
+                                scan_run_id=scan.id,
+                                detection=detection
+                            )
+                            total_threats_flagged += 1
 
-        if has_partial_failures and has_successes:
-            scan.status = "partially_completed"
-        elif has_partial_failures and not has_successes:
-            scan.status = "failed"
-            scan.failure_details = "All source adapters encountered failures."
-        else:
-            scan.status = "completed"
+                elif adapter_res.status == "failed":
+                    has_partial_failures = True
+                    logger.warning(f"Source adapter '{adapter.source_name}' reported failure: {adapter_res.error_message}")
 
-        db.commit()
-        db.refresh(scan)
-        logger.info(f"Scan {scan_run_id} completed with status '{scan.status}'. Candidates: {total_candidates_collected}, Flagged Threats: {total_threats_flagged}")
-        return scan
+            # Finalize scan run status
+            scan.completed_at = datetime.now(timezone.utc)
+            scan.total_candidates_found = total_candidates_collected
+            scan.total_findings_flagged = total_threats_flagged
+
+            if has_partial_failures and has_successes:
+                scan.status = "partially_completed"
+            elif has_partial_failures and not has_successes:
+                scan.status = "failed"
+                scan.failure_details = "All source adapters encountered failures."
+            else:
+                scan.status = "completed"
+
+            db.commit()
+            db.refresh(scan)
+            logger.info(f"Scan {scan_run_id} completed with status '{scan.status}'. Candidates: {total_candidates_collected}, Flagged Threats: {total_threats_flagged}")
+            return scan
+
+        except Exception as exc:
+            db.rollback()
+            try:
+                failed_scan = db.scalar(select(ScanRun).where(ScanRun.id == scan_run_id))
+                if failed_scan:
+                    failed_scan.status = "failed"
+                    failed_scan.completed_at = datetime.now(timezone.utc)
+                    failed_scan.failure_details = f"Scan execution failure: {str(exc)}"
+                    db.commit()
+                    return failed_scan
+            except Exception as inner:
+                logger.error(f"Failed to record scan failure status: {inner}")
+            raise

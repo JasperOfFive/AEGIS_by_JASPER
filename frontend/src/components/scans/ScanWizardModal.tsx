@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAegis } from '../../context/AegisContext';
 import { X, Play, CheckCircle2, AlertTriangle, Shield, Globe, Users, Smartphone, Database } from 'lucide-react';
 import { RadialGlowButton } from '../ui/radial-glow-button';
 
 export const ScanWizardModal: React.FC = () => {
+  const navigate = useNavigate();
   const { isScanWizardOpen, setIsScanWizardOpen, brands, runNewScan } = useAegis();
   const [selectedBrandId, setSelectedBrandId] = useState(brands[0]?.id || '');
   const [scanType, setScanType] = useState('comprehensive');
@@ -23,12 +25,13 @@ export const ScanWizardModal: React.FC = () => {
     await runNewScan(selectedBrandId, selectedTargets, scanType);
     setIsSubmitting(false);
     setIsScanWizardOpen(false);
+    navigate('/app/scan-history');
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in">
       <div
-        className="rounded-2xl border w-full max-w-lg p-6 shadow-2xl relative flex flex-col gap-5 aegis-card"
+        className="rounded-2xl border w-full max-w-lg p-6 shadow-2xl relative flex flex-col gap-5 aegis-card animate-scale-in"
         style={{
           backgroundColor: 'var(--card-bg)',
           borderColor: 'var(--border-color)',

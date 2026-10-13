@@ -63,7 +63,7 @@ export const RecentFindingsTable: React.FC = () => {
         borderColor: 'var(--border-color)',
         boxShadow: 'var(--card-glow)'
       }}
-      className="p-5 rounded-2xl border flex flex-col justify-between transition-colors duration-200"
+      className="p-5 rounded-2xl border flex flex-col justify-between h-full transition-colors duration-200"
     >
       {/* Header */}
       <div className="flex items-center justify-between pb-4">

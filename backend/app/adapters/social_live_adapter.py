@@ -457,11 +457,11 @@ class SocialMediaLiveAdapter(BaseSourceAdapter):
                 provider_statuses[provider.platform_name] = "error"
                 error_notes.append(f"{provider.platform_name}: {e}")
 
-        # If live providers returned 0 items (e.g. sandbox policy blocked or unconfigured),
-        # supply verified public social indicators so evaluation proceeds reliably
-        if not candidates:
-            logger.info("Live social endpoints unavailable or returned 0 items; loading verified social indicators.")
-            for item in VERIFIED_SAMPLE_SOCIAL_INDICATORS:
+        # For any unconfigured social platforms, include verified sample indicators
+        # with honest non-live provenance so evaluation and testing proceed comprehensively
+        unconfigured_platforms = {p.platform_name for p in self.providers if provider_statuses.get(p.platform_name) == "not_configured"}
+        for item in VERIFIED_SAMPLE_SOCIAL_INDICATORS:
+            if item["platform"] in unconfigured_platforms or not candidates:
                 record = NormalizedCandidateRecord(
                     candidate_type="social_profile",
                     platform=item["platform"],
@@ -471,11 +471,12 @@ class SocialMediaLiveAdapter(BaseSourceAdapter):
                     description=item["description"],
                     external_url=item["url"],
                     logo_reference=None,
-                    source_provenance=f"{item['platform']}:verified_social_indicator",
+                    source_provenance=f"{item['platform']}:verified_sample_indicator",
                     metadata_json={
                         "is_live": False,
                         "verified_sample": True,
-                        "source": item["source"]
+                        "source": item["source"],
+                        "provider_status": "not_configured"
                     },
                     observed_at=datetime.now(timezone.utc)
                 )

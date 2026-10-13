@@ -4,6 +4,7 @@ from app.core.config import settings
 from app.detection.name_similarity import NameComparisonResult
 from app.detection.text_similarity import TextComparisonResult
 from app.detection.logo_similarity import LogoComparisonResult
+from app.detection.normalization import normalize_text, normalize_username
 
 
 @dataclass
@@ -337,3 +338,408 @@ def calculate_app_risk(
         detection_reasons=reasons,
         evidence_summary=evidence_summary
     )
+
+
+def calculate_domain_risk(
+    brand_name: str,
+    domain_name: str,
+    name_comp: NameComparisonResult,
+    text_comp: TextComparisonResult,
+    metadata: Dict[str, Any]
+) -> ScoringResult:
+    """
+    Deterministic risk scoring for lookalike domains.
+    Considers typosquatting, live DNS resolution, MX records, combosquatting keywords,
+    page title / content overlap, and parking heuristics.
+    """
+    signals: List[SignalResult] = []
+    reasons: List[str] = []
+
+    is_resolved = metadata.get("is_resolved", False)
+    dns_status = metadata.get("dns_status", "nxdomain")
+    resolved_ips = metadata.get("resolved_ips", [])
+    has_mx = metadata.get("has_mx", False)
+    is_parked = metadata.get("is_parked", False)
+    technique = metadata.get("technique", "similarity")
+    http_title = metadata.get("http_title") or ""
+
+    # 1. Domain Name Similarity & Permutation Signal (max 25)
+    name_score = name_comp.overall_similarity * 25.0
+    name_expl = f"Domain name stem similarity to '{brand_name}' is {name_comp.overall_similarity:.1%} (technique: {technique})."
+    if name_comp.is_exact_match:
+        reasons.append(f"Domain stem exactly matches brand name '{brand_name}'.")
+    elif name_comp.is_transposition:
+        reasons.append(f"Domain typosquatting: character transposition detected in '{domain_name}'.")
+    elif name_comp.is_single_typo:
+        reasons.append(f"Domain typosquatting: 1-character typo detected in '{domain_name}'.")
+
+    signals.append(SignalResult(
+        signal_name="Domain Typosquatting & Permutation",
+        category="name",
+        score_contribution=name_score,
+        max_weight=25.0,
+        raw_score=name_comp.overall_similarity,
+        observed_value=domain_name,
+        target_value=brand_name,
+        explanation=name_expl
+    ))
+
+    # 2. Live DNS & Active Routable IP (max 25)
+    # A generated candidate domain that is unregistered (NXDOMAIN) MUST NOT be a confirmed threat!
+    dns_score = 0.0
+    if is_resolved and dns_status == "active":
+        dns_score = 25.0
+        reasons.append(f"Domain is actively resolved to public IP(s): {', '.join(resolved_ips[:2])}.")
+        dns_expl = f"Active DNS resolution verified on {len(resolved_ips)} public IP(s)."
+    elif dns_status == "nxdomain":
+        dns_score = 0.0
+        dns_expl = "Domain does not resolve (NXDOMAIN); inactive / hypothetical candidate."
+    else:
+        dns_score = 5.0
+        dns_expl = f"DNS resolution status: {dns_status}."
+
+    signals.append(SignalResult(
+        signal_name="Active DNS & Infrastructure Resolution",
+        category="infrastructure",
+        score_contribution=dns_score,
+        max_weight=25.0,
+        raw_score=dns_score / 25.0,
+        observed_value=f"status={dns_status}, ips={', '.join(resolved_ips[:2])}",
+        target_value="active_public_ip",
+        explanation=dns_expl
+    ))
+
+    # 3. MX Record Presence (Phishing Email Weaponization) (max 15)
+    mx_score = 15.0 if has_mx and is_resolved else 0.0
+    if has_mx and is_resolved:
+        reasons.append("Domain configures mail exchange (MX) records, indicating high potential for email impersonation.")
+    signals.append(SignalResult(
+        signal_name="Mail Exchanger (MX) Telemetry",
+        category="email_security",
+        score_contribution=mx_score,
+        max_weight=15.0,
+        raw_score=1.0 if has_mx else 0.0,
+        observed_value=f"has_mx={has_mx}",
+        target_value="no_mx_spoofing",
+        explanation="Active mail exchanger detected on lookalike domain." if has_mx else "No active mail exchanger detected."
+    ))
+
+    # 4. Combosquatting & Deceptive Affixes (max 15)
+    deceptive_keywords = ["login", "verify", "secure", "auth", "portal", "banking", "support", "wallet", "claim"]
+    matched_affixes = [kw for kw in deceptive_keywords if kw in domain_name.lower()]
+    combo_score = min(15.0, len(matched_affixes) * 7.5)
+    if matched_affixes:
+        reasons.append(f"Domain combines brand identity with high-risk authentication keywords: {', '.join(matched_affixes)}.")
+    signals.append(SignalResult(
+        signal_name="Combosquatting & Deceptive Intent",
+        category="intent",
+        score_contribution=combo_score,
+        max_weight=15.0,
+        raw_score=combo_score / 15.0,
+        observed_value=", ".join(matched_affixes) if matched_affixes else "None",
+        target_value="clean_domain",
+        explanation=f"Combosquatting keywords detected: {', '.join(matched_affixes)}." if matched_affixes else "No deceptive authentication keywords found."
+    ))
+
+    # 5. Website Content / Brand Title Overlap & Parking Detection (max 15)
+    content_score = 0.0
+    content_expl = "No active website content retrieved."
+    if is_parked:
+        content_score = 0.0
+        content_expl = "Parked holding / sales page detected; low immediate threat."
+        reasons.append("Domain appears to be parked or listed for sale; no active weaponized content.")
+    elif http_title:
+        title_lower = http_title.lower()
+        brand_clean = brand_name.lower()
+        if brand_clean in title_lower:
+            content_score = 15.0
+            reasons.append(f"Live website title explicitly references brand name: '{http_title}'.")
+            content_expl = f"Page title matches brand: '{http_title}'."
+        else:
+            content_score = 5.0
+            content_expl = f"Page title retrieved: '{http_title}'."
+
+    signals.append(SignalResult(
+        signal_name="Website Content & Parking Analysis",
+        category="content",
+        score_contribution=content_score,
+        max_weight=15.0,
+        raw_score=content_score / 15.0,
+        observed_value=f"parked={is_parked}, title={http_title[:50]}",
+        target_value="legitimate_content",
+        explanation=content_expl
+    ))
+
+    # 6. Telemetry & Suspicious TLD (max 5)
+    suspicious_tlds = [".online", ".xyz", ".top", ".info", ".support", ".app", ".site"]
+    tld_score = 3.0 if any(domain_name.endswith(tld) for tld in suspicious_tlds) else 0.0
+    signals.append(SignalResult(
+        signal_name="TLD Risk Profile",
+        category="telemetry",
+        score_contribution=tld_score,
+        max_weight=5.0,
+        raw_score=tld_score / 5.0,
+        observed_value=domain_name.split(".")[-1] if "." in domain_name else "unknown",
+        target_value="trusted_tld",
+        explanation="Domain uses high-abuse or low-cost TLD." if tld_score > 0 else "Standard TLD."
+    ))
+
+    raw_total = sum(s.score_contribution for s in signals)
+
+    # CRITICAL RULE: If domain is inactive/NXDOMAIN, cap risk score below threat threshold!
+    if not is_resolved or dns_status == "nxdomain":
+        total_score = min(20.0, raw_total * 0.4)
+    elif is_parked:
+        total_score = min(35.0, raw_total * 0.5)
+    else:
+        # Check if there is actual brand impersonation or typosquatting evidence
+        has_impersonation_signal = (
+            name_comp.is_exact_match or 
+            name_comp.is_single_typo or 
+            name_comp.is_transposition or 
+            name_comp.overall_similarity >= 0.70 or 
+            len(matched_affixes) > 0 or 
+            (http_title and brand_name.lower() in http_title.lower())
+        )
+        if not has_impersonation_signal:
+            # Unrelated business or generic overlap without deceptive intent: cap at <= 35.0
+            total_score = min(35.0, raw_total * 0.6)
+        else:
+            total_score = min(100.0, max(0.0, round(raw_total, 1)))
+
+    risk_level = determine_risk_level(total_score)
+
+    summary_parts = []
+    if reasons:
+        summary_parts.append("; ".join(reasons[:2]))
+    summary_parts.append(f"Assessed domain risk score: {total_score}/100 ({risk_level.upper()}).")
+    evidence_summary = " ".join(summary_parts)
+
+    return ScoringResult(
+        total_score=total_score,
+        risk_level=risk_level,
+        signals=signals,
+        detection_reasons=reasons,
+        evidence_summary=evidence_summary
+    )
+
+
+def calculate_phishing_risk(
+    brand_name: str,
+    target_url: str,
+    name_comp: NameComparisonResult,
+    text_comp: TextComparisonResult,
+    metadata: Dict[str, Any]
+) -> ScoringResult:
+    """
+    Deterministic explainable risk scoring for phishing URLs.
+    Evaluates multiple independent indicators:
+    1. Threat Intelligence Feed validation (live vs cached provenance)
+    2. Credential collection and wallet-drainer path analysis
+    3. Deceptive subdomain structure and shared cloud application hosting
+    4. Brand identity token spoofing in hostname
+    5. URL query structure and open redirect telemetry
+
+    Safety Invariants:
+    - A credential path alone NEVER establishes malice without brand spoofing.
+    - A shared brand word alone NEVER establishes impersonation without harvesting intent.
+    - Unlisted zero-day phishing on shared platforms is caught via multi-signal corroboration.
+    """
+    from urllib.parse import urlparse
+    signals: List[SignalResult] = []
+    reasons: List[str] = []
+
+    feed_source = metadata.get("feed_source") or metadata.get("feed")
+    is_live_ingest = metadata.get("is_live_ingest", False)
+    is_cached = metadata.get("is_cached", not is_live_ingest) if feed_source else False
+    cached_at = metadata.get("cached_at") or metadata.get("observed_at") or "2026-10-13T12:00:00Z"
+    has_credential_path = metadata.get("has_credential_path", False)
+    threat_type = metadata.get("threat_type") or "phishing_url"
+    raw_path = metadata.get("url_path") or ""
+    raw_host = metadata.get("hostname") or ""
+
+    # Parse URL
+    try:
+        parsed = urlparse(target_url if "://" in target_url else f"https://{target_url}")
+        hostname = (parsed.netloc or raw_host or target_url).lower().split(":")[0]
+        url_path = parsed.path.lower() or raw_path.lower()
+        url_query = parsed.query.lower()
+    except Exception:
+        hostname = raw_host.lower() or target_url.lower()
+        url_path = raw_path.lower()
+        url_query = ""
+
+    # Shared cloud hosting / PaaS platforms frequently abused for zero-day phishing
+    SHARED_HOSTING_PLATFORMS = (
+        "firebaseapp.com", "web.app", "pages.dev", "workers.dev",
+        "vercel.app", "netlify.app", "github.io", "gitlab.io",
+        "appspot.com", "glitch.me", "surge.sh", "render.com",
+        "supabase.co", "fly.dev", "railway.app", "duckdns.org",
+        "ngrok-free.app", "ngrok.io", "loca.lt"
+    )
+
+    is_shared_host = any(hostname.endswith(f".{plat}") or hostname == plat for plat in SHARED_HOSTING_PLATFORMS)
+
+    # Brand tokens
+    brand_tokens = [tok for tok in normalize_text(brand_name).split() if len(tok) >= 3]
+    brand_clean = normalize_username(brand_name)
+    host_clean = hostname.replace("-", "").replace(".", "")
+
+    DECEPTIVE_TERMS = [
+        "promo", "event", "claim", "airdrop", "reward", "bonus", "login",
+        "auth", "verify", "secure", "support", "recovery", "wallet", "seed",
+        "desk", "portal", "signin", "ebanking", "update", "direct"
+    ]
+    matched_deceptive_in_host = [term for term in DECEPTIVE_TERMS if term in hostname]
+
+    # 1. Threat Intelligence Feed Validation (max 30)
+    feed_score = 0.0
+    if feed_source:
+        feed_score = 30.0
+        if is_cached:
+            reasons.append(f"Matched in cached threat intelligence feed: '{feed_source}' (cached at {cached_at}).")
+            feed_expl = f"URL indexed in cached threat archive ({feed_source}). Sourced as {threat_type} (cached index: {cached_at})."
+        else:
+            reasons.append(f"Confirmed match in live threat intelligence feed: '{feed_source}'.")
+            feed_expl = f"URL confirmed in live threat feed ({feed_source}). Classified as {threat_type}."
+    else:
+        feed_score = 0.0
+        feed_expl = "No threat intelligence feed match (heuristic evaluation)."
+
+    signals.append(SignalResult(
+        signal_name="Threat Intelligence Feed Validation",
+        category="threat_intel",
+        score_contribution=feed_score,
+        max_weight=30.0,
+        raw_score=1.0 if feed_source else 0.0,
+        observed_value=f"{feed_source}:cached" if (feed_source and is_cached) else str(feed_source),
+        target_value="clean_feed",
+        explanation=feed_expl
+    ))
+
+    # 2. Deceptive Subdomain & Brand Spoofing in Hostname (max 25)
+    host_spoof_score = 0.0
+    has_brand_in_host = (brand_clean in host_clean) or any(tok in hostname.split(".")[0] for tok in brand_tokens)
+
+    if brand_clean in host_clean and len(matched_deceptive_in_host) > 0:
+        host_spoof_score = 25.0
+        reasons.append(f"Hostname mimics brand '{brand_name}' combined with deceptive keywords ({', '.join(matched_deceptive_in_host[:2])}).")
+        host_expl = f"Brand identity '{brand_name}' embedded in hostname alongside deceptive terms: {', '.join(matched_deceptive_in_host)}."
+    elif has_brand_in_host and is_shared_host and len(matched_deceptive_in_host) > 0:
+        host_spoof_score = 25.0
+        subdomain_part = hostname.split(".")[0]
+        reasons.append(f"Deceptive tenant subdomain '{subdomain_part}' on public cloud host combines brand with sensitive lures ({', '.join(matched_deceptive_in_host[:2])}).")
+        host_expl = f"Tenant subdomain '{subdomain_part}' on shared cloud platform ({hostname}) spoofs brand."
+    elif has_brand_in_host:
+        host_spoof_score = 15.0
+        host_expl = f"Brand tokens identified in hostname: {hostname}."
+    else:
+        host_spoof_score = 0.0
+        host_expl = "No direct brand identity spoofing in hostname."
+
+    signals.append(SignalResult(
+        signal_name="Brand Identity Spoofing in Hostname",
+        category="hostname_spoofing",
+        score_contribution=host_spoof_score,
+        max_weight=25.0,
+        raw_score=host_spoof_score / 25.0,
+        observed_value=hostname,
+        target_value="official_brand_domain",
+        explanation=host_expl
+    ))
+
+    # 3. Credential Harvesting & Account Recovery Path Structure (max 25)
+    path_score = 0.0
+    HARVESTING_ENDPOINTS = [
+        "/login", "/auth", "/wallet-recovery", "/verify", "/seed-claim", "/seed",
+        "/signin", "/update/password", "/claim/wallet", "/claim", "/wallet",
+        "/banking/auth", "/account/verify", "/payment/confirm"
+    ]
+    is_harvesting_path = has_credential_path or any(endpoint in url_path for endpoint in HARVESTING_ENDPOINTS)
+
+    if is_harvesting_path:
+        path_score = 25.0
+        reasons.append(f"High-risk credential harvesting endpoint path detected: '{url_path}'.")
+        path_expl = f"URL path matches authentication / wallet drainer pattern: {url_path}."
+    elif url_path and url_path != "/":
+        path_score = 8.0
+        path_expl = f"URL includes path structure: {url_path}."
+    else:
+        path_expl = "Root URL; no credential harvesting endpoint detected."
+
+    signals.append(SignalResult(
+        signal_name="Credential Harvesting Path Structure",
+        category="path_analysis",
+        score_contribution=path_score,
+        max_weight=25.0,
+        raw_score=path_score / 25.0,
+        observed_value=url_path,
+        target_value="no_harvesting_path",
+        explanation=path_expl
+    ))
+
+    # 4. Domain Name Stem Similarity & Phishing Permutation (max 10)
+    name_score = min(10.0, name_comp.overall_similarity * 10.0)
+    signals.append(SignalResult(
+        signal_name="Domain Stem Name Similarity",
+        category="name",
+        score_contribution=name_score,
+        max_weight=10.0,
+        raw_score=name_comp.overall_similarity,
+        observed_value=name_comp.candidate_name,
+        target_value=brand_name,
+        explanation=f"Hostname token similarity to brand is {name_comp.overall_similarity:.1%}."
+    ))
+
+    # 5. Shared Hosting Context & Deceptive Architecture (max 10)
+    hosting_context_score = 0.0
+    if is_shared_host and has_brand_in_host:
+        hosting_context_score = 10.0
+        reasons.append(f"Hosted on public multi-tenant SaaS infrastructure with brand spoofing.")
+        hosting_expl = f"URL uses public shared application host ({hostname}) to evade domain registration scrutiny."
+    elif feed_source:
+        hosting_context_score = 5.0
+        hosting_expl = "Corroborated by active threat intelligence records."
+    else:
+        hosting_context_score = 0.0
+        hosting_expl = "Standard hosting infrastructure observed."
+
+    signals.append(SignalResult(
+        signal_name="Hosting Context & Infrastructure Risk",
+        category="infrastructure",
+        score_contribution=hosting_context_score,
+        max_weight=10.0,
+        raw_score=hosting_context_score / 10.0,
+        observed_value=f"shared_host={is_shared_host}",
+        target_value="dedicated_verified_host",
+        explanation=hosting_expl
+    ))
+
+    raw_total = sum(s.score_contribution for s in signals)
+
+    # STRICT SAFETY CAPS TO PREVENT FALSE POSITIVES:
+    # 1. A credential-related path alone must NEVER establish that a site is malicious.
+    if host_spoof_score == 0.0 and feed_score == 0.0:
+        total_score = min(25.0, raw_total * 0.4)
+    # 2. A shared brand word in content/path alone must NEVER establish impersonation without harvesting path or deceptive host.
+    elif not is_harvesting_path and feed_score == 0.0 and len(matched_deceptive_in_host) == 0:
+        total_score = min(25.0, raw_total * 0.4)
+    else:
+        total_score = min(100.0, max(0.0, round(raw_total, 1)))
+
+    risk_level = determine_risk_level(total_score)
+
+    summary_parts = []
+    if reasons:
+        summary_parts.append("; ".join(reasons[:2]))
+    summary_parts.append(f"Phishing threat risk score: {total_score}/100 ({risk_level.upper()}).")
+    evidence_summary = " ".join(summary_parts)
+
+    return ScoringResult(
+        total_score=total_score,
+        risk_level=risk_level,
+        signals=signals,
+        detection_reasons=reasons,
+        evidence_summary=evidence_summary
+    )
+

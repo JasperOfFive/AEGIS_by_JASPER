@@ -5,6 +5,7 @@ from app.adapters.fixtures.app_store_adapter import AppStoreFixtureAdapter
 from app.adapters.threat_intel_adapter import ThreatIntelFeedAdapter
 from app.adapters.app_store_live_adapter import AppStoreLiveAdapter
 from app.adapters.social_live_adapter import SocialMediaLiveAdapter
+from app.adapters.lookalike_domain_adapter import LookalikeDomainAdapter
 
 
 class AdapterRegistry:
@@ -16,6 +17,7 @@ class AdapterRegistry:
         # Register primary live adapters
         self.register(SocialMediaLiveAdapter())
         self.register(AppStoreLiveAdapter())
+        self.register(LookalikeDomainAdapter())
         self.register(ThreatIntelFeedAdapter())
 
         # Register legacy fixture adapters under explicit names

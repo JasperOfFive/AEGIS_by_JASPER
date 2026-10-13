@@ -1,6 +1,8 @@
 import hashlib
 import json
 import logging
+import re
+import time
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, Tuple
 
@@ -148,6 +150,7 @@ def generate_fallback_explanation(
         generated_at=datetime.now(timezone.utc),
         cached=False,
         explanation=structured,
+        ai_explanation=structured,
         error_message=error_message
     )
 
@@ -296,6 +299,9 @@ class ExplanationService:
                 attempt_error = f"Network connection error to Apinex: {type(exc).__name__}."
                 logger.warning("Apinex connection error on attempt %d: %s", attempt + 1, exc)
 
+            if attempt < max_attempts - 1 and raw_response_content is None and error_status != "rate_limit":
+                time.sleep(1.0)
+
         return raw_response_content, status_code, attempt_error, error_status
 
     @classmethod
@@ -326,22 +332,26 @@ class ExplanationService:
 
         # Check cached explanation if not forcing refresh
         if not force_refresh and finding.ai_explanation:
-            if finding.ai_explanation_evidence_hash == current_evidence_hash:
-                try:
-                    structured = AIExplanationStructured.model_validate(finding.ai_explanation)
-                    is_ai = finding.ai_explanation_status == "success"
-                    return AIExplanationResponse(
-                        finding_id=finding.id,
-                        status=finding.ai_explanation_status or ("success" if is_ai else "fallback_rule"),
-                        is_ai_generated=is_ai,
-                        model=finding.ai_explanation_model if is_ai else None,
-                        generated_at=finding.ai_explanation_generated_at,
-                        cached=True,
-                        explanation=structured,
-                        error_message=None
-                    )
-                except Exception as e:
-                    logger.warning("Failed to deserialize cached explanation for finding %s: %s", finding.id, e)
+            # Only serve from cache if it was an actual successful AI explanation,
+            # or if the provider is still unconfigured
+            if finding.ai_explanation_status == "success" or not is_api_configured():
+                if finding.ai_explanation_evidence_hash == current_evidence_hash:
+                    try:
+                        structured = AIExplanationStructured.model_validate(finding.ai_explanation)
+                        is_ai = finding.ai_explanation_status == "success"
+                        return AIExplanationResponse(
+                            finding_id=finding.id,
+                            status=finding.ai_explanation_status or ("success" if is_ai else "fallback_rule"),
+                            is_ai_generated=is_ai,
+                            model=finding.ai_explanation_model if is_ai else None,
+                            generated_at=finding.ai_explanation_generated_at,
+                            cached=True,
+                            explanation=structured,
+                            ai_explanation=structured,
+                            error_message=None
+                        )
+                    except Exception as e:
+                        logger.warning("Failed to deserialize cached explanation for finding %s: %s", finding.id, e)
 
         # If API key is not configured, return deterministic fallback
         if not is_api_configured():
@@ -401,15 +411,24 @@ class ExplanationService:
 
             # Clean markdown wrappers if returned
             clean_content = msg_content.strip()
-            if clean_content.startswith("```json"):
-                clean_content = clean_content[7:]
-            elif clean_content.startswith("```"):
-                clean_content = clean_content[3:]
-            if clean_content.endswith("```"):
-                clean_content = clean_content[:-3]
-            clean_content = clean_content.strip()
+            if "```" in clean_content:
+                fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", clean_content)
+                if fence_match:
+                    clean_content = fence_match.group(1).strip()
+
+            if not clean_content.startswith("{"):
+                start_idx = clean_content.find("{")
+                end_idx = clean_content.rfind("}")
+                if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                    clean_content = clean_content[start_idx:end_idx + 1]
 
             parsed_data = json.loads(clean_content)
+            if isinstance(parsed_data, dict):
+                if "suggested_actions" not in parsed_data and "recommended_actions" in parsed_data:
+                    parsed_data["suggested_actions"] = parsed_data["recommended_actions"]
+                if "rule_triggers" not in parsed_data and "key_factors" in parsed_data:
+                    parsed_data["rule_triggers"] = parsed_data["key_factors"]
+
             structured = AIExplanationStructured.model_validate(parsed_data)
 
             response_obj = AIExplanationResponse(
@@ -420,6 +439,7 @@ class ExplanationService:
                 generated_at=datetime.now(timezone.utc),
                 cached=False,
                 explanation=structured,
+                ai_explanation=structured,
                 error_message=None
             )
 

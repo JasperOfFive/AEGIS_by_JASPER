@@ -1,20 +1,15 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { Finding, Brand, Scan, FindingStatus } from '../types';
 import { INITIAL_BRANDS, INITIAL_FINDINGS, INITIAL_SCANS } from '../data/mockData';
-import {
-  apiClient,
-  BackendDashboardStatsResponse,
-  BackendBrandResponse,
-} from '../api/client';
-import {
-  backendBrandToFrontend,
-  backendFindingToFrontend,
-  backendScanToFrontend,
-} from '../api/adapters';
+import { api } from '../services/apiService';
 
 interface AegisContextType {
   theme: 'dark' | 'light';
   toggleTheme: () => void;
+  isAuthenticated: boolean;
+  currentUser: { name: string; email: string } | null;
+  setCurrentUser: (user: { name: string; email: string } | null) => void;
+  logout: () => void;
   brands: Brand[];
   findings: Finding[];
   scans: Scan[];
@@ -24,23 +19,43 @@ interface AegisContextType {
   setIsScanWizardOpen: (open: boolean) => void;
   runNewScan: (brandId: string, targets: string[], scanType: string) => Promise<void>;
   updateFindingStatus: (id: string, status: FindingStatus, comment?: string) => Promise<void>;
+  addFindingNote: (id: string, note: string) => Promise<void>;
+  refreshData: () => Promise<void>;
   addBrand: (brand: Partial<Brand>) => Promise<void>;
+  deleteBrand: (id: string) => Promise<void>;
+  updateBrand: (id: string, updates: Partial<Brand>) => Promise<void>;
   retryScan: (scanId: string) => Promise<void>;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
-  // Live Backend Telemetry & Actions
-  dashboardStats: BackendDashboardStatsResponse | null;
-  backendStatus: 'connected' | 'connecting' | 'disconnected';
-  isLoading: boolean;
-  refreshData: () => Promise<void>;
-  explainFinding: (id: string, forceRefresh?: boolean) => Promise<any>;
-  seedDemoData: () => Promise<void>;
-  resetDatabase: () => Promise<void>;
 }
 
 const AegisContext = createContext<AegisContextType | undefined>(undefined);
 
 export const AegisProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [currentUser, setCurrentUser] = useState<{ name: string; email: string } | null>(() => {
+    const saved = localStorage.getItem('aegis-current-user');
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  const isAuthenticated = Boolean(currentUser);
+
+  const handleSetCurrentUser = (user: { name: string; email: string } | null) => {
+    setCurrentUser(user);
+    if (user) {
+      localStorage.setItem('aegis-current-user', JSON.stringify(user));
+      localStorage.setItem('aegis-authenticated', 'true');
+    } else {
+      localStorage.removeItem('aegis-current-user');
+      localStorage.removeItem('aegis-authenticated');
+      localStorage.removeItem('aegis-auth-token');
+    }
+  };
+
+  const logout = () => {
+    api.auth.logout().catch(() => {});
+    handleSetCurrentUser(null);
+  };
+
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     const saved = localStorage.getItem('aegis-theme');
     return (saved as 'dark' | 'light') || 'dark';
@@ -61,25 +76,48 @@ export const AegisProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return saved ? JSON.parse(saved) : INITIAL_SCANS;
   });
 
-  const [dashboardStats, setDashboardStats] = useState<BackendDashboardStatsResponse | null>(null);
-  const [backendStatus, setBackendStatus] = useState<'connected' | 'connecting' | 'disconnected'>('connecting');
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null);
   const [isScanWizardOpen, setIsScanWizardOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Synchronize Theme
+  // Reusable function to synchronize with real FastAPI backend
+  const refreshData = useCallback(async () => {
+    try {
+      const [bRes, fRes, sRes] = await Promise.all([
+        api.brands.getAll(),
+        api.findings.getAll(),
+        api.scans.getAll()
+      ]);
+      if (bRes.data && Array.isArray(bRes.data) && bRes.data.length > 0) {
+        setBrands(bRes.data);
+      }
+      if (fRes.data && Array.isArray(fRes.data) && fRes.data.length > 0) {
+        setFindings(fRes.data);
+      }
+      if (sRes.data && Array.isArray(sRes.data) && sRes.data.length > 0) {
+        setScans(sRes.data);
+      }
+    } catch (err) {
+      console.warn('Backend sync warning:', err);
+    }
+  }, []);
+
+  // Automatic Backend Synchronization on initial mount
+  useEffect(() => {
+    refreshData();
+  }, [refreshData]);
+
   useEffect(() => {
     localStorage.setItem('aegis-theme', theme);
     if (theme === 'light') {
       document.documentElement.classList.add('light');
+      document.documentElement.classList.remove('dark');
     } else {
       document.documentElement.classList.remove('light');
+      document.documentElement.classList.add('dark');
     }
   }, [theme]);
 
-  // Persist fallback cache
   useEffect(() => {
     localStorage.setItem('aegis-brands', JSON.stringify(brands));
   }, [brands]);
@@ -93,368 +131,229 @@ export const AegisProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [scans]);
 
   const toggleTheme = () => {
-    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+    setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
   };
 
-  /**
-   * Fetch full state from FastAPI backend
-   */
-  const refreshData = useCallback(async () => {
+  const updateFindingStatus = async (id: string, status: FindingStatus, comment?: string) => {
     try {
-      // 1. Health check
-      await apiClient.getHealth();
-      setBackendStatus('connected');
-
-      // 2. Fetch brands
-      const rawBrands = await apiClient.getBrands(false);
-      const brandMap: Record<string, BackendBrandResponse> = {};
-      rawBrands.forEach((b) => {
-        brandMap[b.id] = b;
-      });
-
-      // If database is completely empty on fresh install, auto-seed Acme demo
-      if (rawBrands.length === 0) {
-        try {
-          await apiClient.seedDemoData();
-          const seededBrands = await apiClient.getBrands(false);
-          seededBrands.forEach((b) => {
-            brandMap[b.id] = b;
-          });
-        } catch (seedErr) {
-          console.warn('Initial seed skipped:', seedErr);
+      const res = await api.findings.updateStatus(id, status, comment);
+      if (res.data) {
+        const updated = res.data;
+        setFindings(prev => prev.map(f => (f.id === id ? updated : f)));
+        if (selectedFinding && selectedFinding.id === id) {
+          setSelectedFinding(updated);
         }
+        return;
       }
-
-      const activeBrands = rawBrands.length > 0 ? rawBrands : Object.values(brandMap);
-      if (activeBrands.length > 0) {
-        const mappedBrands = activeBrands.map(backendBrandToFrontend);
-        setBrands(mappedBrands);
-      }
-
-      // 3. Fetch findings
-      const findingsRes = await apiClient.getFindings({ page: 1, page_size: 100 });
-      if (findingsRes && findingsRes.items && findingsRes.items.length > 0) {
-        const mappedFindings = findingsRes.items.map((f) =>
-          backendFindingToFrontend(f, brandMap)
-        );
-        setFindings(mappedFindings);
-      }
-
-      // 4. Fetch scans
-      const scansRes = await apiClient.getScans(50);
-      if (scansRes && scansRes.length > 0) {
-        const mappedScans = scansRes.map((s) => backendScanToFrontend(s, brandMap));
-        setScans(mappedScans);
-      }
-
-      // 5. Fetch dashboard stats
-      const stats = await apiClient.getDashboardStats();
-      setDashboardStats(stats);
     } catch (err) {
-      console.warn('Backend connection unavailable, using local cache/fixtures:', err);
-      setBackendStatus('disconnected');
-    } finally {
-      setIsLoading(false);
+      console.warn('Failed to update status on backend:', err);
     }
-  }, []);
 
-  // Run on mount
-  useEffect(() => {
-    refreshData();
-  }, [refreshData]);
-
-  /**
-   * Update Finding Status through Analyst Review Endpoint
-   */
-  const updateFindingStatus = async (
-    id: string,
-    status: FindingStatus,
-    comment?: string
-  ) => {
-    // 1. Optimistic UI update
-    setFindings((prev) =>
-      prev.map((f) => (f.id === id ? { ...f, status } : f))
+    // Optimistic fallback
+    setFindings(prev =>
+      prev.map(f => (f.id === id ? { ...f, status } : f))
     );
     if (selectedFinding && selectedFinding.id === id) {
-      setSelectedFinding((prev) => (prev ? { ...prev, status } : null));
+      setSelectedFinding(prev => (prev ? { ...prev, status } : null));
     }
+  };
 
-    // 2. Persist to backend if online
+  const addFindingNote = async (id: string, note: string) => {
     try {
-      const backendStatusMap: Record<FindingStatus, string> = {
-        new: 'new',
-        under_review: 'under_review',
-        resolved: 'resolved',
-        escalated: 'confirmed_threat',
-      };
-
-      await apiClient.reviewFinding(id, {
-        new_status: backendStatusMap[status] || status,
-        reviewer: 'Alex Carter',
-        comment: comment || `Status updated to ${status} via analyst triage drawer.`,
-      });
-      // Refresh to pull updated review timestamps
-      const updated = await apiClient.getFinding(id);
-      if (updated) {
-        const mapped = backendFindingToFrontend(updated);
-        setFindings((prev) => prev.map((f) => (f.id === id ? mapped : f)));
-        if (selectedFinding?.id === id) {
-          setSelectedFinding(mapped);
+      const res = await api.findings.addNote(id, note);
+      if (res.data) {
+        const updated = res.data;
+        setFindings(prev => prev.map(f => (f.id === id ? updated : f)));
+        if (selectedFinding && selectedFinding.id === id) {
+          setSelectedFinding(updated);
         }
+        return;
       }
     } catch (err) {
-      console.warn('Backend review persistence fallback to local:', err);
+      console.warn('Failed to add note on backend:', err);
+    }
+
+    const noteEntry = `[${new Date().toLocaleTimeString()}] ${note}`;
+    setFindings(prev =>
+      prev.map(f => {
+        if (f.id === id) {
+          const notes = f.notes || [];
+          return { ...f, notes: [...notes, noteEntry] };
+        }
+        return f;
+      })
+    );
+    if (selectedFinding && selectedFinding.id === id) {
+      setSelectedFinding(prev => {
+        if (!prev) return null;
+        const notes = prev.notes || [];
+        return { ...prev, notes: [...notes, noteEntry] };
+      });
     }
   };
 
-  /**
-   * Register a new Brand
-   */
   const addBrand = async (newB: Partial<Brand>) => {
-    const brandName = newB.name || 'New Monitored Brand';
-    const brandDomain = (newB.domain || 'example.com').replace(/^https?:\/\//, '');
-
-    // 1. Attempt to persist to backend
     try {
-      const created = await apiClient.createBrand({
-        name: brandName,
-        description: newB.description || 'Newly registered organization under active surveillance.',
-        industry: 'Technology & Financial Infrastructure',
-        primary_website: `https://${brandDomain}`,
-        is_active: true,
-      });
-
-      // Add asset for primary domain
-      await apiClient.createBrandAsset(created.id, {
-        asset_type: 'official_domain',
-        platform: 'web',
-        display_value: brandDomain,
-        url: `https://${brandDomain}`,
-        verification_status: 'verified',
-      });
-
-      await refreshData();
-      return;
+      const res = await api.brands.create(newB);
+      if (res.data) {
+        setBrands(prev => [res.data!, ...prev]);
+        return;
+      }
     } catch (err) {
-      console.warn('Backend createBrand failed, falling back to local state:', err);
+      console.warn('Failed to create brand on backend:', err);
     }
 
-    // Fallback local
     const brand: Brand = {
       id: `brand-${Date.now()}`,
-      name: brandName,
-      domain: brandDomain,
-      logo: brandName.charAt(0).toUpperCase(),
+      name: newB.name || 'New Monitored Brand',
+      domain: newB.domain || 'example.com',
+      logo: (newB.name || 'B').charAt(0).toUpperCase(),
       status: 'active',
-      monitoredAssets: 8,
-      riskScore: 25,
+      monitoredAssets: 12,
+      riskScore: 35,
       lastScanTime: 'Just now',
-      activeFindingsCount: 0,
-      description: newB.description || 'Newly registered organization under active surveillance.',
+      activeFindingsCount: 1,
+      description: newB.description || 'Newly monitored organizational brand asset.',
       socialHandles: newB.socialHandles || [],
-      protectedKeywords: newB.protectedKeywords || [brandName.toLowerCase()],
+      protectedKeywords: newB.protectedKeywords || [newB.name?.toLowerCase() || 'asset']
     };
-    setBrands((prev) => [brand, ...prev]);
+    setBrands(prev => [brand, ...prev]);
   };
 
-  /**
-   * Run a New Scan
-   */
+  const deleteBrand = async (id: string) => {
+    try {
+      await api.brands.delete(id);
+    } catch (err) {
+      console.warn('Failed to delete brand on backend:', err);
+    }
+    setBrands(prev => prev.filter(b => b.id !== id));
+  };
+
+  const updateBrand = async (id: string, updates: Partial<Brand>) => {
+    try {
+      const res = await api.brands.update(id, updates);
+      if (res.data) {
+        setBrands(prev => prev.map(b => (b.id === id ? res.data! : b)));
+        return;
+      }
+    } catch (err) {
+      console.warn('Failed to update brand on backend:', err);
+    }
+    setBrands(prev => prev.map(b => (b.id === id ? { ...b, ...updates } : b)));
+  };
+
   const runNewScan = async (brandId: string, targets: string[], scanType: string) => {
-    const targetBrand = brands.find((b) => b.id === brandId) || brands[0];
-    const brandIdToUse = targetBrand?.id || 'brand-acme';
+    const brand = brands.find(b => b.id === brandId) || brands[0];
+    const brandName = brand ? brand.name : 'Acme Finance Group';
 
-    const reqSourceTypes: string[] = [];
-    if (targets.includes('social')) reqSourceTypes.push('social');
-    if (targets.includes('mobile')) reqSourceTypes.push('app_store');
-    if (reqSourceTypes.length === 0) reqSourceTypes.push('social', 'app_store');
+    const res = await api.scans.run(brandId, targets, scanType);
+    const scanId = res.data?.id || `scan-${Date.now()}`;
 
-    // 1. Optimistic running scan in UI
-    const tempScanId = `scan-${Date.now()}`;
-    const optimisticScan: Scan = {
-      id: tempScanId,
-      brandName: targetBrand.name,
-      brandId: targetBrand.id,
+    const newScan: Scan = {
+      id: scanId,
+      brandName,
+      brandId: brand ? brand.id : brandId,
       status: 'running',
       progress: 25,
       findingsCount: 0,
       highPriorityCount: 0,
       timeAgo: 'Just now',
       timestamp: Date.now(),
-      targetCount: targets.length * 12 + 18,
-      scanType: (scanType as any) || 'comprehensive',
+      targetCount: (targets.length || 2) * 20,
+      scanType: (scanType as any) || 'comprehensive'
     };
-    setScans((prev) => [optimisticScan, ...prev]);
 
-    // 2. Call backend trigger scan
-    try {
-      const scanRes = await apiClient.triggerScan({
-        brand_id: brandIdToUse,
-        requested_source_types: reqSourceTypes,
-      });
+    setScans(prev => [newScan, ...prev.filter(s => s.id !== scanId)]);
 
-      if (scanRes) {
-        // Scan completed synchronously on backend!
-        await refreshData();
-        return;
-      }
-    } catch (err) {
-      console.warn('Backend scan failed, running local simulator:', err);
+    // Poll real backend scan status
+    if (res.data?.id) {
+      let attempts = 0;
+      const maxAttempts = 30;
+      const pollInterval = setInterval(async () => {
+        attempts++;
+        try {
+          const statusRes = await api.scans.getStatus(scanId);
+          if (statusRes.data) {
+            const s = statusRes.data;
+            const isDone = s.is_terminal || s.status === 'completed' || s.status === 'partially_completed' || s.status === 'failed';
+
+            setScans(prev =>
+              prev.map(item => {
+                if (item.id === scanId) {
+                  return {
+                    ...item,
+                    status: s.status === 'failed' ? 'failed' : (s.status === 'completed' ? 'completed' : 'running'),
+                    progress: isDone ? 100 : Math.min(25 + attempts * 15, 90),
+                    findingsCount: s.total_findings_flagged || item.findingsCount,
+                    highPriorityCount: Math.round((s.total_findings_flagged || 0) * 0.4),
+                    errorMessage: s.failure_details || undefined
+                  };
+                }
+                return item;
+              })
+            );
+
+            if (isDone || attempts >= maxAttempts) {
+              clearInterval(pollInterval);
+              await refreshData();
+            }
+          } else if (attempts >= maxAttempts) {
+            clearInterval(pollInterval);
+          }
+        } catch {
+          if (attempts >= maxAttempts) {
+            clearInterval(pollInterval);
+          }
+        }
+      }, 1200);
     }
-
-    // 3. Simulator fallback if backend offline
-    setTimeout(() => {
-      setScans((prev) =>
-        prev.map((s) => (s.id === tempScanId ? { ...s, progress: 65, findingsCount: 3 } : s))
-      );
-    }, 1200);
-
-    setTimeout(() => {
-      const simulatedFinding: Finding = {
-        id: `find-${Date.now()}`,
-        type: targets.includes('social') ? 'social' : 'domain',
-        title: targets.includes('social')
-          ? `@${targetBrand.name.toLowerCase().replace(/[^a-z0-9]/g, '')}_rewards_official`
-          : `${targetBrand.name.toLowerCase().replace(/[^a-z0-9]/g, '')}-verify-login.online`,
-        targetUrl: targets.includes('social')
-          ? `https://instagram.com/${targetBrand.name.toLowerCase().replace(/[^a-z0-9]/g, '')}_rewards_official`
-          : `https://${targetBrand.name.toLowerCase().replace(/[^a-z0-9]/g, '')}-verify-login.online`,
-        associatedBrand: targetBrand.name,
-        brandId: targetBrand.id,
-        risk: 'high',
-        similarity: 92,
-        status: 'new',
-        detectedTime: 'Just now',
-        detectedTimestamp: Date.now(),
-        platform: targets.includes('social') ? 'instagram' : 'web',
-        dnsHost: 'gateway-protection.threat-shield.net',
-        ipAddress: '104.21.72.19',
-        registrar: 'Dynadot LLC',
-        asn: 'AS13335 Cloudflare',
-        assignedAnalyst: 'Alex Carter',
-        notes: [
-          `Autonomous discovery from ${scanType} probe.`,
-          'Typosquatting permutation detected with high keyword overlap.',
-        ],
-      };
-
-      setFindings((prev) => [simulatedFinding, ...prev]);
-      setScans((prev) =>
-        prev.map((s) =>
-          s.id === tempScanId
-            ? {
-                ...s,
-                status: 'completed',
-                progress: 100,
-                findingsCount: 5,
-                highPriorityCount: 2,
-              }
-            : s
-        )
-      );
-    }, 2800);
   };
 
-  /**
-   * Retry a scan
-   */
   const retryScan = async (scanId: string) => {
-    setScans((prev) =>
-      prev.map((s) =>
+    setScans(prev =>
+      prev.map(s =>
         s.id === scanId
-          ? { ...s, status: 'running', progress: 30, errorMessage: undefined, timeAgo: 'Retrying...' }
+          ? { ...s, status: 'running', progress: 20, errorMessage: undefined, timeAgo: 'Retrying...' }
           : s
       )
     );
 
-    const scan = scans.find((s) => s.id === scanId);
-    if (scan && scan.brandId) {
-      try {
-        await apiClient.triggerScan({
-          brand_id: scan.brandId,
-          requested_source_types: ['social', 'app_store'],
-        });
-        await refreshData();
-        return;
-      } catch (err) {
-        console.warn('Backend retry failed, falling back:', err);
-      }
-    }
+    const res = await api.scans.retry(scanId);
+    if (res.data?.id) {
+      const newScanId = res.data.id;
+      let attempts = 0;
+      const pollInterval = setInterval(async () => {
+        attempts++;
+        try {
+          const statusRes = await api.scans.getStatus(newScanId);
+          if (statusRes.data) {
+            const s = statusRes.data;
+            const isDone = s.is_terminal || s.status === 'completed' || s.status === 'partially_completed' || s.status === 'failed';
 
-    setTimeout(() => {
-      setScans((prev) =>
-        prev.map((s) =>
-          s.id === scanId
-            ? { ...s, status: 'completed', progress: 100, findingsCount: 6, timeAgo: 'Just now' }
-            : s
-        )
-      );
-    }, 1800);
-  };
+            setScans(prev =>
+              prev.map(item => {
+                if (item.id === scanId || item.id === newScanId) {
+                  return {
+                    ...item,
+                    status: s.status === 'failed' ? 'failed' : (s.status === 'completed' ? 'completed' : 'running'),
+                    progress: isDone ? 100 : Math.min(20 + attempts * 20, 90),
+                    findingsCount: s.total_findings_flagged || item.findingsCount,
+                    errorMessage: s.failure_details || undefined
+                  };
+                }
+                return item;
+              })
+            );
 
-  /**
-   * Apinex DeepSeek AI Explanation
-   */
-  const explainFinding = async (id: string, forceRefresh = false) => {
-    try {
-      const res = await apiClient.explainFinding(id, forceRefresh);
-      if (res && res.ai_explanation) {
-        // Update local finding
-        setFindings((prev) =>
-          prev.map((f) => {
-            if (f.id === id) {
-              return {
-                ...f,
-                notes: [
-                  ...(f.notes || []),
-                  `[Apinex AI (${res.model})]: ${
-                    res.ai_explanation.summary || 'Threat analysis complete.'
-                  }`,
-                ],
-                raw: f.raw
-                  ? {
-                      ...f.raw,
-                      ai_explanation: res.ai_explanation,
-                      ai_explanation_model: res.model,
-                      ai_explanation_status: res.provider_status,
-                    }
-                  : undefined,
-              };
+            if (isDone || attempts >= 25) {
+              clearInterval(pollInterval);
+              await refreshData();
             }
-            return f;
-          })
-        );
-      }
-      return res;
-    } catch (err) {
-      console.warn('explainFinding error:', err);
-      throw err;
-    }
-  };
-
-  /**
-   * Seed demo data (Acme Finance Group & baseline scan)
-   */
-  const seedDemoData = async () => {
-    try {
-      await apiClient.seedDemoData();
-      await refreshData();
-    } catch (err) {
-      console.error('Seed demo data error:', err);
-      throw err;
-    }
-  };
-
-  /**
-   * Reset database
-   */
-  const resetDatabase = async () => {
-    try {
-      await apiClient.resetDemoData();
-      await refreshData();
-    } catch (err) {
-      console.error('Reset database error:', err);
-      throw err;
+          }
+        } catch {
+          if (attempts >= 25) clearInterval(pollInterval);
+        }
+      }, 1200);
     }
   };
 
@@ -463,6 +362,10 @@ export const AegisProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       value={{
         theme,
         toggleTheme,
+        isAuthenticated,
+        currentUser,
+        setCurrentUser: handleSetCurrentUser,
+        logout,
         brands,
         findings,
         scans,
@@ -472,17 +375,14 @@ export const AegisProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setIsScanWizardOpen,
         runNewScan,
         updateFindingStatus,
+        addFindingNote,
+        refreshData,
         addBrand,
+        deleteBrand,
+        updateBrand,
         retryScan,
         searchQuery,
-        setSearchQuery,
-        dashboardStats,
-        backendStatus,
-        isLoading,
-        refreshData,
-        explainFinding,
-        seedDemoData,
-        resetDatabase,
+        setSearchQuery
       }}
     >
       {children}

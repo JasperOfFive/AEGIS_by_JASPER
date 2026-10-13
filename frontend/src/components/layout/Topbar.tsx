@@ -1,13 +1,23 @@
 import React, { useState } from 'react';
-import { Search, Bell, Moon, Sun, Command, X, ShieldAlert, Menu } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Search, Bell, Moon, Sun, Command, X, ShieldAlert, Menu, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useAegis } from '../../context/AegisContext';
-import { useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
+import MetallicPaint from '../react-bits/MetallicPaint';
 
 interface TopbarProps {
   onOpenMobileMenu?: () => void;
+  isHomePage?: boolean;
+  isSidebarCollapsed?: boolean;
+  onToggleSidebar?: () => void;
 }
 
-export const Topbar: React.FC<TopbarProps> = ({ onOpenMobileMenu }) => {
+export const Topbar: React.FC<TopbarProps> = ({
+  onOpenMobileMenu,
+  isHomePage = false,
+  isSidebarCollapsed = false,
+  onToggleSidebar
+}) => {
   const { theme, toggleTheme, searchQuery, setSearchQuery, findings, brands } = useAegis();
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -34,17 +44,80 @@ export const Topbar: React.FC<TopbarProps> = ({ onOpenMobileMenu }) => {
         color: 'var(--text-primary)'
       }}
     >
-      {/* Search Bar / Trigger */}
-      <div className="flex items-center gap-3 w-full max-w-md">
-        <button
-          onClick={onOpenMobileMenu}
-          className="lg:hidden p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5"
-          style={{ color: 'var(--text-secondary)' }}
-          aria-label="Open navigation menu"
-        >
-          <Menu size={20} />
-        </button>
+      {/* Left: Brand Logo & Sidebar Controls */}
+      <div className="flex items-center gap-3 shrink-0 z-10">
+        {/* On Home Page OR when Sidebar is Collapsed on other pages: Show AEGIS Brand Logo */}
+        {(isHomePage || isSidebarCollapsed) && (
+          <NavLink to="/app" className="flex items-center gap-2.5 mr-1 shrink-0 group cursor-pointer">
+            <div
+              className="w-8 h-8 relative shrink-0 flex items-center justify-center group-hover:scale-105 transition-transform"
+              style={{
+                filter: theme === 'dark'
+                  ? 'drop-shadow(0 0 10px rgba(56, 189, 248, 0.45))'
+                  : 'drop-shadow(0 0 8px rgba(255, 141, 92, 0.4))'
+              }}
+            >
+              <MetallicPaint
+                imageSrc="/aegis-logo.png"
+                scale={0.88}
+                color={theme === 'dark' ? '#FFFFFF' : '#FF8D5C'}
+                gradientColor={theme === 'dark' ? '#0070F3' : '#C2410C'}
+                lightMode={theme === 'light'}
+                edgeBend={0.7}
+                distortion={0.08}
+                mouseTilt={0.6}
+                speed={0.8}
+                density={2.5}
+              />
+            </div>
+            <div className="flex flex-col">
+              <span className="font-bold text-sm tracking-wider font-mono leading-none" style={{ color: 'var(--text-primary)' }}>
+                AEGIS
+              </span>
+              <span className="text-[9px] uppercase tracking-widest font-medium hidden sm:inline" style={{ color: 'var(--primary-accent)' }}>
+                Brand Intel
+              </span>
+            </div>
+          </NavLink>
+        )}
 
+        {/* If NOT on Home page: Show Mobile Menu and Desktop Collapse/Expand Controls */}
+        {!isHomePage && (
+          <>
+            <button
+              onClick={onOpenMobileMenu}
+              className="lg:hidden p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 shrink-0"
+              style={{ color: 'var(--text-secondary)' }}
+              aria-label="Open navigation menu"
+            >
+              <Menu size={20} />
+            </button>
+
+            {onToggleSidebar && (
+              <button
+                type="button"
+                onClick={onToggleSidebar}
+                className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border hover:scale-105 transition-all text-xs font-medium shrink-0 cursor-pointer"
+                style={{
+                  backgroundColor: 'var(--card-sub-bg)',
+                  borderColor: 'var(--border-color)',
+                  color: 'var(--text-secondary)'
+                }}
+                title={isSidebarCollapsed ? "Expand sidebar (Ctrl+B)" : "Collapse sidebar (Ctrl+B)"}
+                aria-label={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              >
+                {isSidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+                <span className="text-[11px] hidden md:inline">
+                  {isSidebarCollapsed ? "Expand Radar" : "Collapse"}
+                </span>
+              </button>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Center: Search Bar (Centered across navbar) */}
+      <div className="absolute left-1/2 -translate-x-1/2 w-full max-w-md px-4 hidden sm:block pointer-events-auto z-10">
         <div className="relative w-full">
           <div
             onClick={() => setIsSearchOpen(true)}
@@ -65,7 +138,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onOpenMobileMenu }) => {
       </div>
 
       {/* Global Actions */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 shrink-0 z-10">
         {/* Notification Bell */}
         <div className="relative">
           <button
@@ -158,15 +231,22 @@ export const Topbar: React.FC<TopbarProps> = ({ onOpenMobileMenu }) => {
         </button>
       </div>
 
-      {/* Global Search Dialog Modal */}
-      {isSearchOpen && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-start justify-center pt-20 p-4">
+      {/* Global Search Dialog Modal (Portal mounted to document.body for full-screen blur) */}
+      {isSearchOpen && createPortal(
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center pt-20 p-4 backdrop-blur-md bg-black/20 dark:bg-black/50 transition-all"
+          onClick={() => {
+            setIsSearchOpen(false);
+            setSearchQuery('');
+          }}
+        >
           <div
             className="border rounded-2xl w-full max-w-xl overflow-hidden shadow-2xl"
             style={{
               backgroundColor: 'var(--card-bg)',
               borderColor: 'var(--border-color)'
             }}
+            onClick={(e) => e.stopPropagation()}
           >
             <div
               className="p-3.5 border-b flex items-center gap-3"
@@ -275,7 +355,8 @@ export const Topbar: React.FC<TopbarProps> = ({ onOpenMobileMenu }) => {
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </header>
   );

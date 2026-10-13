@@ -150,6 +150,8 @@ export const FindingsPage: React.FC = () => {
             <option value="under_review">Under Review</option>
             <option value="resolved">Resolved</option>
             <option value="escalated">Escalated</option>
+            <option value="false_positive">False Positive</option>
+            <option value="ignored">Ignored</option>
           </select>
 
           {/* Platform Filter */}

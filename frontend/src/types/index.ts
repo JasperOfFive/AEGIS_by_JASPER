@@ -1,5 +1,5 @@
 export type Severity = 'critical' | 'high' | 'medium' | 'low';
-export type FindingStatus = 'new' | 'under_review' | 'resolved' | 'escalated';
+export type FindingStatus = 'new' | 'under_review' | 'resolved' | 'escalated' | 'false_positive' | 'ignored';
 export type FindingType = 'social' | 'app' | 'domain' | 'phishing' | 'threat';
 
 export interface Finding {
@@ -42,6 +42,10 @@ export interface Brand {
     handle: string;
   }[];
   protectedKeywords: string[];
+  scheduleEnabled?: boolean;
+  scheduleIntervalHours?: number;
+  lastScheduledRunAt?: string;
+  nextScheduledRunAt?: string;
 }
 
 export interface Scan {

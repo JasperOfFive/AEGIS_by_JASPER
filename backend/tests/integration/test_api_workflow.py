@@ -42,12 +42,12 @@ def test_end_to_end_api_workflow(client: TestClient):
     res = client.post(f"/api/v1/brands/{brand_id}/assets", json=asset_app)
     assert res.status_code == 201
 
-    # 4. Trigger Scan Run
+    # 4. Trigger Scan Run (synchronous for test verification)
     scan_payload = {
         "brand_id": brand_id,
         "requested_source_types": ["social", "app_store"]
     }
-    res = client.post("/api/v1/scans", json=scan_payload)
+    res = client.post("/api/v1/scans?synchronous=true", json=scan_payload)
     assert res.status_code == 201
     scan_data = res.json()
     assert scan_data["status"] == "completed"

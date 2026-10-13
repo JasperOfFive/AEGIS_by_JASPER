@@ -300,7 +300,7 @@ export const Aurora: React.FC<AuroraProps> = ({
         depth: false,
         stencil: false
       });
-    } catch (e) {
+    } catch {
       gl = null;
     }
 

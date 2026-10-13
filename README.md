@@ -53,16 +53,19 @@ hackxlerate/
 │   └── .env.example                    # Sanitized environment template
 ├── frontend/
 │   ├── src/
-│   │   ├── api/client.ts               # Typed REST API client connecting to FastAPI backend
-│   │   ├── api/adapters.ts             # Schema converters and normalizers
-│   │   ├── context/AegisContext.tsx    # Live state provider with optimistic UI and offline fallbacks
-│   │   ├── components/                 # UI components, layout shell, target cursor, shader canvas
+│   │   ├── services/                   # API services, FastAPI schema adapters, and AI evidence client
+│   │   │   ├── apiService.ts           # Centralized REST client connecting to FastAPI backend
+│   │   │   ├── adapters.ts             # Schema adapters translating backend payloads to UI models
+│   │   │   └── aiEvidenceService.ts    # Apinex DeepSeek AI explanation client
+│   │   ├── context/AegisContext.tsx    # Live state provider with optimistic UI and backend synchronization
+│   │   ├── components/                 # UI components, layout shell, target cursor, animations
 │   │   │   ├── dashboard/              # KpiCards, RiskDistributionChart, ScanActivityCard, RecentFindingsTable
-│   │   │   ├── findings/               # FindingDetailDrawer with AI explanation & review actions
+│   │   │   ├── findings/               # FindingDetailDrawer with AI explanation & triage actions
 │   │   │   ├── layout/                 # AppShell, Sidebar, Topbar
-│   │   │   ├── react-bits/             # TargetCursor, GradientWaves, MagicBento, Lanyard, Lightfall
-│   │   │   └── scans/                  # ScanWizardModal for targeted multi-surface probing
-│   │   ├── pages/                      # LandingPage, DashboardOverview, Brands, Social, Apps, Findings, Scans, Settings
+│   │   │   ├── react-bits/             # TargetCursor, GradientWaves, MetallicPaint, LogoLoop, TiltedCard, Lanyard
+│   │   │   ├── scans/                  # ScanWizardModal for targeted multi-surface probing
+│   │   │   └── ui/                     # SeverityBadge, StatusBadge, radial-glow-button, spotlight-navbar
+│   │   ├── pages/                      # LandingPage, AuthPage, DashboardOverview, Brands, Social, Apps, ThreatIntel, Findings, Scans, Reports, Settings
 │   │   └── types/                      # TypeScript domain interfaces
 │   ├── package.json
 │   ├── vite.config.ts                  # Vite config with backend /api proxy

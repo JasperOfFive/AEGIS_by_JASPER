@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Outlet } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Outlet, useLocation } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { ScanWizardModal } from '../scans/ScanWizardModal';
@@ -8,6 +8,23 @@ import { X } from 'lucide-react';
 
 export const AppShell: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const location = useLocation();
+
+  // Detect if user is on the Home page of the dashboard
+  const isHomePage = location.pathname === '/app' || location.pathname === '/app/' || location.pathname === '/';
+
+  // Keyboard shortcut Ctrl+B or Cmd+B to toggle sidebar on pages other than Home
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b' && !isHomePage) {
+        e.preventDefault();
+        setIsSidebarCollapsed(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isHomePage]);
 
   return (
     <div
@@ -17,13 +34,21 @@ export const AppShell: React.FC = () => {
         color: 'var(--text-primary)'
       }}
     >
-      {/* Desktop Persistent Sidebar */}
-      <div className="hidden lg:block shrink-0">
-        <Sidebar />
-      </div>
+      {/* Desktop Persistent Sidebar: Hidden on Home page, visible & collapsible on other sections */}
+      {!isHomePage && (
+        <div
+          className={`hidden lg:block shrink-0 transition-all duration-300 ease-in-out overflow-hidden ${
+            isSidebarCollapsed
+              ? 'w-0 opacity-0 -translate-x-4 border-r-0 pointer-events-none'
+              : 'w-72 opacity-100 translate-x-0'
+          }`}
+        >
+          <Sidebar onToggleCollapse={() => setIsSidebarCollapsed(true)} />
+        </div>
+      )}
 
-      {/* Mobile Sidebar Overlay */}
-      {mobileMenuOpen && (
+      {/* Mobile Sidebar Overlay: Only on sections other than Home */}
+      {!isHomePage && mobileMenuOpen && (
         <div className="fixed inset-0 z-50 flex lg:hidden bg-black/75 backdrop-blur-sm animate-fade-in">
           <div className="w-64 h-full relative">
             <Sidebar onCloseMobile={() => setMobileMenuOpen(false)} />
@@ -41,7 +66,12 @@ export const AppShell: React.FC = () => {
 
       {/* Main App Container */}
       <div className="flex-1 flex flex-col h-full overflow-hidden">
-        <Topbar onOpenMobileMenu={() => setMobileMenuOpen(true)} />
+        <Topbar
+          onOpenMobileMenu={() => setMobileMenuOpen(true)}
+          isHomePage={isHomePage}
+          isSidebarCollapsed={isSidebarCollapsed}
+          onToggleSidebar={() => setIsSidebarCollapsed(prev => !prev)}
+        />
         
         {/* Scrollable Viewport */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">

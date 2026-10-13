@@ -64,31 +64,40 @@ def test_apple_app_store_parsing():
 
 
 def test_google_play_store_parsing():
-    """Verify Google Play provider parses structured HTML when available and rejects unconfigured dynamic pages."""
-    mock_structured_play_html = """
-    <html>
-      <body>
-        <div>
-          <a href="/store/apps/details?id=com.acme.fastloan.scam">
-            <span class="DdUgx">Acme Fast Loan</span>
-            <span class="wIntEg">Fast Loan Dev LLC</span>
-          </a>
-          <a href="/store/apps/details?id=com.acme.payapp">
-            <span class="DdUgx">Acme Pay</span>
-            <span class="wIntEg">FinTech Mobile Group</span>
-          </a>
-        </div>
-      </body>
-    </html>
-    """
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_resp.text = mock_structured_play_html
-    mock_resp.url = "https://play.google.com/store/search?q=acme&c=apps"
+    """Verify Google Play provider parses genuine items from google-play-scraper and handles empty/blocked states."""
+    mock_play_results = [
+        {
+            "appId": "com.acme.fastloan.scam",
+            "title": "Acme Fast Loan",
+            "developer": "Fast Loan Dev LLC",
+            "description": "Quick instant loans with Acme branding.",
+            "icon": "https://play-lh.googleusercontent.com/icon1.png",
+            "score": 3.2,
+            "installs": "5,000+",
+            "genre": "Finance",
+            "free": True,
+            "currency": "INR",
+            "price": 0
+        },
+        {
+            "appId": "com.acme.payapp",
+            "title": "Acme Pay",
+            "developer": "FinTech Mobile Group",
+            "description": "Mobile wallet and peer-to-peer payments.",
+            "icon": "https://play-lh.googleusercontent.com/icon2.png",
+            "score": 4.1,
+            "installs": "50,000+",
+            "genre": "Finance",
+            "free": True,
+            "currency": "USD",
+            "price": 0
+        }
+    ]
 
-    with patch("httpx.Client.get", return_value=mock_resp):
-        status, candidates, msg = GooglePlayLiveProvider.search(query="acme")
-        assert status == "live_verified"
+    # 1. Test Successful Live Search
+    with patch("app.adapters.app_store_live_adapter.play_search", return_value=mock_play_results):
+        status, candidates, msg = GooglePlayLiveProvider.search(query="acme", limit=5)
+        assert status == "LIVE"
         assert len(candidates) == 2
         packages = [c.username_or_package for c in candidates]
         assert "com.acme.fastloan.scam" in packages
@@ -98,18 +107,28 @@ def test_google_play_store_parsing():
             assert c.platform == "google_play"
             assert c.source_provenance == "google_play:live_catalog"
             assert c.metadata_json["is_live"] is True
+            assert c.metadata_json["status"] == "LIVE"
 
-    # Test rejection of dynamic obfuscated or consent responses without API key
-    mock_obfuscated_resp = MagicMock()
-    mock_obfuscated_resp.status_code = 200
-    mock_obfuscated_resp.text = "<html><body><script>/* dynamic client bundle */</script></body></html>"
-    mock_obfuscated_resp.url = "https://play.google.com/store/search?q=acme&c=apps"
-
-    with patch("httpx.Client.get", return_value=mock_obfuscated_resp):
-        status, candidates, msg = GooglePlayLiveProvider.search(query="acme")
-        assert status == "not_configured"
+    # 2. Test Empty Results (LIVE_NO_RESULTS)
+    with patch("app.adapters.app_store_live_adapter.play_search", return_value=[]):
+        status, candidates, msg = GooglePlayLiveProvider.search(query="nonexistentquery")
+        assert status == "LIVE_NO_RESULTS"
         assert len(candidates) == 0
-        assert "GOOGLE_PLAY_API_KEY" in msg
+
+    # 3. Test Blocked / Rate-Limited Request (BLOCKED)
+    import urllib.error
+    mock_http_err = urllib.error.HTTPError(
+        url="https://play.google.com",
+        code=429,
+        msg="Too Many Requests",
+        hdrs={},
+        fp=None
+    )
+    with patch("app.adapters.app_store_live_adapter.play_search", side_effect=mock_http_err):
+        status, candidates, msg = GooglePlayLiveProvider.search(query="acme")
+        assert status == "BLOCKED"
+        assert len(candidates) == 0
+        assert "blocked" in msg.lower()
 
 
 def test_app_store_live_adapter_deduplication():

@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends
+from typing import Optional
+from fastapi import APIRouter, Depends, Header
 from sqlalchemy.orm import Session
 from sqlalchemy import select, delete
 from app.db.session import get_db
@@ -17,6 +18,12 @@ router = APIRouter(prefix="/demo", tags=["Demo & Fixtures"])
 @router.post("/seed")
 def seed_demo_data(db: Session = Depends(get_db)):
     """Seed prototype with Acme Finance and trigger an automated baseline scan."""
+    from app.core.config import settings
+    from app.core.errors import bad_request_exception
+
+    if not settings.ALLOW_DEMO_RESET:
+        raise bad_request_exception("Demo seeding is disabled in production environment. Enable ALLOW_DEMO_RESET explicitly if required.")
+
     logger.info("Seeding demo data...")
 
     # Check if Acme already exists
@@ -84,19 +91,19 @@ def seed_demo_data(db: Session = Depends(get_db)):
     else:
         brand = existing
 
-    # Trigger baseline scan
+    # Trigger baseline scan covering all four threat-detection pipelines
     scan = ScanService.trigger_scan(
         db,
         ScanTriggerRequest(
             brand_id=brand.id,
-            requested_source_types=["social", "app_store"]
+            requested_source_types=["social", "app_store", "domain", "threat_intel"]
         ),
         run_synchronous=True
     )
 
     return {
         "success": True,
-        "message": "Demo data successfully seeded and initial threat scan completed.",
+        "message": "Demo data successfully seeded and multi-pipeline threat scan completed.",
         "brand_id": brand.id,
         "brand_name": brand.name,
         "scan_id": scan.id,
@@ -106,8 +113,24 @@ def seed_demo_data(db: Session = Depends(get_db)):
 
 
 @router.post("/reset")
-def reset_database(db: Session = Depends(get_db)):
-    """Reset all findings, candidates, scans, and brands for a fresh demonstration."""
+def reset_database(
+    x_aegis_admin_token: Optional[str] = Header(None, alias="x-aegis-admin-token"),
+    db: Session = Depends(get_db)
+):
+    """
+    Reset all findings, candidates, scans, and brands for a fresh demonstration.
+    Protected by admin confirmation token header to prevent unauthorized destruction.
+    """
+    from app.core.config import settings
+    from app.core.errors import bad_request_exception
+    import secrets
+
+    if not settings.ALLOW_DEMO_RESET:
+        raise bad_request_exception("Database reset is disabled in current environment.")
+
+    if not x_aegis_admin_token or not secrets.compare_digest(x_aegis_admin_token, settings.AEGIS_ADMIN_TOKEN):
+        raise bad_request_exception("Unauthorized reset attempt. Valid 'x-aegis-admin-token' header required.")
+
     db.execute(delete(Review))
     db.execute(delete(Finding))
     db.execute(delete(CandidateObservation))

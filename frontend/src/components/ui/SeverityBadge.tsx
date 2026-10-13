@@ -1,5 +1,6 @@
 import React from 'react';
 import { Severity } from '../../types';
+import { useAegis } from '../../context/AegisContext';
 
 interface SeverityBadgeProps {
   severity: Severity;
@@ -7,34 +8,37 @@ interface SeverityBadgeProps {
   showDot?: boolean;
 }
 
-export const SeverityBadge: React.FC<SeverityBadgeProps> = ({ severity, className = '', showDot = false }) => {
+export const SeverityBadge: React.FC<SeverityBadgeProps> = ({ severity, className = '', showDot = true }) => {
+  const { theme } = useAegis();
+  const isLight = theme === 'light';
+
   const styles: Record<Severity, { bg: string; text: string; border: string; dot: string; label: string }> = {
     critical: {
-      bg: 'bg-rose-500/10 dark:bg-rose-950/40',
-      text: 'text-rose-600 dark:text-rose-400',
-      border: 'border-rose-500/30',
-      dot: 'bg-rose-500',
+      bg: isLight ? 'bg-red-700 shadow-md' : 'bg-rose-500/20',
+      text: isLight ? 'text-white font-extrabold' : 'text-rose-300 font-bold',
+      border: isLight ? 'border-red-800' : 'border-rose-500/50',
+      dot: isLight ? 'bg-white' : 'bg-rose-400',
       label: 'Critical'
     },
     high: {
-      bg: 'bg-orange-500/10 dark:bg-orange-950/40',
-      text: 'text-orange-600 dark:text-orange-400',
-      border: 'border-orange-500/30',
-      dot: 'bg-orange-500',
+      bg: isLight ? 'bg-rose-600 shadow-md' : 'bg-rose-500/20',
+      text: isLight ? 'text-white font-extrabold' : 'text-rose-300 font-bold',
+      border: isLight ? 'border-rose-700' : 'border-rose-500/50',
+      dot: isLight ? 'bg-white' : 'bg-rose-400',
       label: 'High'
     },
     medium: {
-      bg: 'bg-amber-500/10 dark:bg-amber-950/40',
-      text: 'text-amber-600 dark:text-amber-400',
-      border: 'border-amber-500/30',
-      dot: 'bg-amber-500',
+      bg: isLight ? 'bg-amber-600 shadow-md' : 'bg-amber-500/20',
+      text: isLight ? 'text-white font-extrabold' : 'text-amber-300 font-bold',
+      border: isLight ? 'border-amber-700' : 'border-amber-500/50',
+      dot: isLight ? 'bg-white' : 'bg-amber-400',
       label: 'Medium'
     },
     low: {
-      bg: 'bg-slate-500/10 dark:bg-slate-800/40',
-      text: 'text-slate-600 dark:text-slate-300',
-      border: 'border-slate-500/30',
-      dot: 'bg-slate-400',
+      bg: isLight ? 'bg-emerald-600 shadow-md' : 'bg-emerald-500/20',
+      text: isLight ? 'text-white font-extrabold' : 'text-emerald-300 font-bold',
+      border: isLight ? 'border-emerald-700' : 'border-emerald-500/50',
+      dot: isLight ? 'bg-white' : 'bg-emerald-400',
       label: 'Low'
     }
   };
@@ -43,9 +47,9 @@ export const SeverityBadge: React.FC<SeverityBadgeProps> = ({ severity, classNam
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border ${current.bg} ${current.text} ${current.border} ${className}`}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-mono tracking-wider uppercase border ${current.bg} ${current.text} ${current.border} ${className}`}
     >
-      {showDot && <span className={`w-1.5 h-1.5 rounded-full ${current.dot}`} />}
+      {showDot && <span className={`w-1.5 h-1.5 rounded-full ${current.dot} animate-pulse shrink-0`} />}
       {current.label}
     </span>
   );

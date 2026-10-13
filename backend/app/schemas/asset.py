@@ -11,6 +11,21 @@ class BrandAssetBase(BaseModel):
     url: Optional[str] = Field(None, description="Optional URL to asset")
     image_reference: Optional[str] = Field(None, description="Image URL or perceptual hash or fixture ID")
     verification_status: str = Field("verified", description="verified, pending, unverified")
+    
+    # Official Mobile Asset Inventory & Lifecycle Support
+    lifecycle_status: str = Field("active", description="active, retired, legacy")
+    official_publisher: Optional[str] = Field(None, description="Official publisher/developer name")
+    effective_date: Optional[datetime] = None
+    retirement_date: Optional[datetime] = None
+    analyst_notes: Optional[str] = None
+
+    @field_validator("lifecycle_status")
+    @classmethod
+    def validate_lifecycle_status(cls, v: str) -> str:
+        valid_statuses = {"active", "retired", "legacy"}
+        if v.lower() not in valid_statuses:
+            raise ValueError(f"Invalid lifecycle_status. Must be one of: {', '.join(valid_statuses)}")
+        return v.lower()
 
     @field_validator("asset_type")
     @classmethod
@@ -39,6 +54,11 @@ class BrandAssetUpdate(BaseModel):
     url: Optional[str] = None
     image_reference: Optional[str] = None
     verification_status: Optional[str] = None
+    lifecycle_status: Optional[str] = None
+    official_publisher: Optional[str] = None
+    effective_date: Optional[datetime] = None
+    retirement_date: Optional[datetime] = None
+    analyst_notes: Optional[str] = None
 
 
 class BrandAssetResponse(BrandAssetBase):

@@ -6,7 +6,7 @@ import { RadialGlowButton } from '../components/ui/radial-glow-button';
 import { Shield, Sparkles, Activity, Layers, ArrowRight } from 'lucide-react';
 
 export const HomePage: React.FC = () => {
-  const { theme, brands, findings, scans, setIsScanWizardOpen } = useAegis();
+  const { theme, brands, findings, scans, setIsScanWizardOpen, currentUser } = useAegis();
   const navigate = useNavigate();
 
   const activeScansCount = scans.filter(s => s.status === 'running').length;
@@ -60,32 +60,19 @@ export const HomePage: React.FC = () => {
         <div
           className="absolute inset-0 pointer-events-none opacity-20 blur-3xl -z-10"
           style={{
-            background: `radial-gradient(circle at 50% 30%, ${
-              theme === 'dark' ? '#38BDF8' : '#FF8D5C'
-            } 0%, transparent 70%)`
+            background: `radial-gradient(circle at 50% 30%, ${theme === 'dark' ? '#38BDF8' : '#FF8D5C'
+              } 0%, transparent 70%)`
           }}
         />
 
         <div className="max-w-3xl mx-auto flex flex-col items-center justify-center space-y-4">
-          {/* Status Indicator Pill */}
-          <div
-            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border text-xs font-mono font-semibold tracking-wider"
-            style={{
-              backgroundColor: 'var(--card-sub-bg)',
-              borderColor: 'var(--border-color)',
-              color: 'var(--primary-accent)'
-            }}
-          >
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span>AEGIS RADAR ONLINE • SHIELD ACTIVE</span>
-          </div>
-
           {/* Main Greeting Headline */}
           <h1
-            className="text-3xl sm:text-5xl font-extrabold tracking-tight"
+            className="tracking-tight flex items-baseline justify-center gap-2.5 sm:gap-3 flex-wrap"
             style={{ color: 'var(--text-primary)' }}
           >
-            Good morning, Alex
+            <span className="text-3xl sm:text-5xl font-semibold">Good morning,</span>
+            <span className="text-4xl sm:text-6xl font-extrabold">{currentUser?.name?.split(' ')[0] || 'Alex'}</span>
           </h1>
 
           {/* Subtitle / Description */}

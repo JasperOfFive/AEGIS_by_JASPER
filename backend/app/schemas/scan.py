@@ -41,3 +41,19 @@ class ScanRunResponse(BaseModel):
     failure_details: Optional[str] = None
     created_at: datetime
     source_results: List[ScanSourceResultResponse] = Field(default_factory=list)
+
+
+class ScanStatusResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    brand_id: str
+    status: str
+    is_terminal: bool
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    total_candidates_found: int = 0
+    total_findings_flagged: int = 0
+    failure_details: Optional[str] = None
+    created_at: datetime
+    source_results: List[ScanSourceResultResponse] = Field(default_factory=list)

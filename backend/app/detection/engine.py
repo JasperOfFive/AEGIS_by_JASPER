@@ -10,7 +10,12 @@ from app.detection.name_similarity import compare_names
 from app.detection.text_similarity import compare_descriptions
 from app.detection.logo_similarity import compare_logos
 from app.detection.official_exclusion import evaluate_official_exclusion, ExclusionDecision
-from app.detection.risk_scoring import calculate_social_risk, calculate_app_risk
+from app.detection.risk_scoring import (
+    calculate_social_risk,
+    calculate_app_risk,
+    calculate_domain_risk,
+    calculate_phishing_risk
+)
 
 
 @dataclass
@@ -36,7 +41,11 @@ def evaluate_candidate(
     
     1. Evaluates official asset exclusions (confirmed official match, likely official).
     2. Runs multi-signal similarity analysis (name, handle/package, logo, description, telemetry).
-    3. Calculates calibrated risk score and structured explainability breakdown.
+    3. Calculates calibrated risk score and structured explainability breakdown across:
+       - Lookalike domains
+       - Phishing URLs
+       - Social media profiles
+       - Mobile applications
     """
     # Extract brand fields
     b_name = getattr(brand, "name", None) or (brand.get("name") if isinstance(brand, dict) else "")
@@ -51,6 +60,7 @@ def evaluate_candidate(
     c_pub = getattr(candidate, "publisher_or_developer", None) or (candidate.get("publisher_or_developer") if isinstance(candidate, dict) else "")
     c_desc = getattr(candidate, "description", None) or (candidate.get("description") if isinstance(candidate, dict) else "")
     c_logo = getattr(candidate, "logo_reference", None) or (candidate.get("logo_reference") if isinstance(candidate, dict) else "")
+    c_url = getattr(candidate, "external_url", None) or (candidate.get("external_url") if isinstance(candidate, dict) else "")
     c_meta = getattr(candidate, "metadata_json", {}) or (candidate.get("metadata_json") if isinstance(candidate, dict) else {}) or {}
 
     # Extract brand logo reference from assets if registered
@@ -107,7 +117,49 @@ def evaluate_candidate(
     logo_comp = compare_logos(brand_logo_ref, c_logo)
 
     # STEP 3: TYPE-SPECIFIC EVALUATION
-    if c_type == "social_profile":
+    if c_type in ("lookalike_domain", "domain"):
+        domain_val = c_user_pkg or c_name
+        stem = domain_val.split(":")[0].split("/")[0].split(".")[0] if "." in domain_val else domain_val
+        domain_name_comp = compare_names(b_name, stem, is_handle=False)
+        scoring = calculate_domain_risk(
+            brand_name=b_name,
+            domain_name=domain_val,
+            name_comp=domain_name_comp,
+            text_comp=text_comp,
+            metadata=c_meta
+        )
+        if not c_meta.get("is_resolved", False) or c_meta.get("dns_status") == "nxdomain":
+            decision = "unregistered_candidate"
+            is_threat = False
+        elif scoring.total_score >= 40.0:
+            decision = "potential_impersonation"
+            is_threat = True
+        else:
+            decision = ExclusionDecision.INSUFFICIENT_EVIDENCE.value
+            is_threat = False
+
+    elif c_type in ("phishing_url", "url"):
+        scoring = calculate_phishing_risk(
+            brand_name=b_name,
+            target_url=c_url or c_user_pkg or c_name,
+            name_comp=name_comp,
+            text_comp=text_comp,
+            metadata=c_meta
+        )
+        if c_meta.get("feed_source"):
+            decision = ExclusionDecision.CONFIRMED_PHISHING.value
+            is_threat = True
+        elif scoring.total_score >= 50.0:
+            decision = ExclusionDecision.SUSPICIOUS_NEEDS_REVIEW.value
+            is_threat = True
+        elif scoring.total_score >= 30.0:
+            decision = ExclusionDecision.POTENTIAL_IMPERSONATION.value
+            is_threat = True
+        else:
+            decision = ExclusionDecision.INSUFFICIENT_EVIDENCE.value
+            is_threat = False
+
+    elif c_type in ("social_profile", "social"):
         handle_comp = compare_names(b_name, c_user_pkg or "", is_handle=True)
         scoring = calculate_social_risk(
             brand_name=b_name,
@@ -117,6 +169,13 @@ def evaluate_candidate(
             text_comp=text_comp,
             metadata=c_meta
         )
+        if scoring.total_score < 40.0 and not name_comp.is_exact_match:
+            decision = ExclusionDecision.INSUFFICIENT_EVIDENCE.value
+            is_threat = False
+        else:
+            decision = ExclusionDecision.POTENTIAL_IMPERSONATION.value
+            is_threat = True
+
     else: # mobile_app
         # Publisher check
         pub_norm = normalize_text(c_pub or "")
@@ -160,14 +219,12 @@ def evaluate_candidate(
             corroborating_score=corroborating,
             metadata=c_meta
         )
-
-    # Filter out candidates with insufficient evidence / low similarity
-    if scoring.total_score < 25.0 and not name_comp.is_exact_match:
-        decision = ExclusionDecision.INSUFFICIENT_EVIDENCE.value
-        is_threat = False
-    else:
-        decision = ExclusionDecision.POTENTIAL_IMPERSONATION.value
-        is_threat = True
+        if scoring.total_score < 40.0 and not name_comp.is_exact_match:
+            decision = ExclusionDecision.INSUFFICIENT_EVIDENCE.value
+            is_threat = False
+        else:
+            decision = ExclusionDecision.POTENTIAL_IMPERSONATION.value
+            is_threat = True
 
     return DetectionResult(
         decision=decision,

@@ -78,7 +78,12 @@ class AssetService:
             display_value=data.display_value.strip(),
             url=data.url.strip() if data.url else None,
             image_reference=data.image_reference,
-            verification_status=data.verification_status
+            verification_status=data.verification_status,
+            lifecycle_status=data.lifecycle_status,
+            official_publisher=data.official_publisher.strip() if data.official_publisher else None,
+            effective_date=data.effective_date,
+            retirement_date=data.retirement_date,
+            analyst_notes=data.analyst_notes.strip() if data.analyst_notes else None
         )
         db.add(asset)
         db.commit()

@@ -25,6 +25,14 @@ class BrandAsset(Base):
     url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     image_reference: Mapped[str | None] = mapped_column(Text, nullable=True)
     verification_status: Mapped[str] = mapped_column(String(32), default="verified", nullable=False) # verified, pending, unverified
+    
+    # Official Mobile Asset Lifecycle & Inventory Support
+    lifecycle_status: Mapped[str] = mapped_column(String(32), default="active", nullable=False, index=True) # active, retired, legacy
+    official_publisher: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    effective_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    retirement_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    analyst_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=get_utc_now, nullable=False)
 
     brand: Mapped["Brand"] = relationship("Brand", back_populates="assets")

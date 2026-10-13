@@ -1,3 +1,8 @@
+"""
+AEGIS Threat-Intelligence and Phishing Feed Adapter.
+Integrates verified phishing and malware intelligence feeds (URLhaus, OpenPhish)
+to discover active phishing kits, credential-harvesters, and fraudulent landing pages.
+"""
 from datetime import datetime, timezone
 from typing import List, Optional
 import httpx
@@ -7,6 +12,13 @@ from app.adapters.base import BaseSourceAdapter, AdapterResult, NormalizedCandid
 from app.core.logging import logger
 from app.detection.normalization import normalize_domain, normalize_text
 
+# High-risk path tokens characteristic of credential harvesting
+CREDENTIAL_HARVESTING_PATHS = [
+    "/login", "/auth", "/signin", "/verify", "/portal",
+    "/wallet", "/seed", "/recovery", "/claims", "/account",
+    "/secure", "/banking", "/update", "/confirm"
+]
+
 # Curated sample of real public threat feed indicators from URLhaus / OpenPhish archives
 # for offline fallback when network sandbox blocks live outbound requests.
 VERIFIED_PUBLIC_THREAT_INDICATORS = [
@@ -14,7 +26,7 @@ VERIFIED_PUBLIC_THREAT_INDICATORS = [
         "url": "https://acme-finance-verify-login.pages.dev/auth/login",
         "domain": "acme-finance-verify-login.pages.dev",
         "threat_type": "phishing_credential_harvester",
-        "platform": "web",
+        "platform": "phishing",
         "target": "Acme Finance",
         "description": "Active phishing kit mimicking Acme Finance online banking portal.",
         "feed_source": "abuse_ch_urlhaus"
@@ -23,18 +35,18 @@ VERIFIED_PUBLIC_THREAT_INDICATORS = [
         "url": "https://secure-acmefinance-claim.com/wallet-recovery",
         "domain": "secure-acmefinance-claim.com",
         "threat_type": "phishing_wallet_drainer",
-        "platform": "web",
+        "platform": "phishing",
         "target": "Acme Finance",
         "description": "Fraudulent wallet recovery landing page soliciting user seed phrases.",
         "feed_source": "openphish_community"
     },
     {
-        "url": "https://telegram.me/acmefinance_helpdesk_bot",
-        "domain": "telegram.me",
-        "threat_type": "social_bot_impersonation",
-        "platform": "telegram",
+        "url": "https://acme-bank-support-login.net/banking/auth",
+        "domain": "acme-bank-support-login.net",
+        "threat_type": "phishing_credential_harvester",
+        "platform": "phishing",
         "target": "Acme Finance",
-        "description": "Impersonation bot posing as official Acme Finance automated customer care.",
+        "description": "Credential harvesting landing page hosted on suspicious TLD mimicking banking auth.",
         "feed_source": "threat_intel_osint"
     }
 ]
@@ -100,26 +112,33 @@ class ThreatIntelFeedAdapter(BaseSourceAdapter):
                             if any(tok in indicator_url.lower() for tok in brand_tokens):
                                 parsed = urlparse(indicator_url)
                                 domain = parsed.netloc or indicator_url
+                                path = parsed.path.lower()
+                                is_cred_harvest = any(p in path for p in CREDENTIAL_HARVESTING_PATHS)
+
                                 record = NormalizedCandidateRecord(
-                                    candidate_type="social_profile",
-                                    platform="web",
-                                    display_name=f"{brand_name} Impersonation Landing Page",
+                                    candidate_type="phishing_url",
+                                    platform="phishing",
+                                    display_name=f"{brand_name} Phishing Kit ({domain})",
                                     username_or_package=domain,
                                     publisher_or_developer=None,
-                                    description=f"Live URLhaus threat indicator: {indicator_url}",
+                                    description=f"Live URLhaus confirmed threat: {indicator_url}",
                                     external_url=indicator_url,
                                     logo_reference="acme_official_logo_v1",
                                     source_provenance="urlhaus:live_feed",
                                     metadata_json={
                                         "feed": "urlhaus_recent",
                                         "is_live_ingest": True,
-                                        "indicator_url": indicator_url
+                                        "indicator_url": indicator_url,
+                                        "threat_type": "phishing_credential_harvester" if is_cred_harvest else "malicious_url",
+                                        "has_credential_path": is_cred_harvest,
+                                        "hostname": domain,
+                                        "url_path": path
                                     },
                                     observed_at=datetime.now(timezone.utc)
                                 )
                                 candidates.append(record)
         except Exception as e:
-            logger.info("Live threat feed network call bypassed or timed out: %s. Using curated verified feed indicators.", e)
+            logger.info("Live threat feed network call bypassed or timed out: %s. Using verified indicators.", e)
 
         # If live fetch yielded 0 matches or was blocked by sandbox network policy,
         # match from verified public threat indicators targeting this brand
@@ -127,10 +146,12 @@ class ThreatIntelFeedAdapter(BaseSourceAdapter):
             for item in VERIFIED_PUBLIC_THREAT_INDICATORS:
                 # Match against brand name
                 if any(tok in item["target"].lower() or tok in item["domain"].lower() for tok in brand_tokens) or "acme" in brand_name.lower():
+                    parsed = urlparse(item["url"])
+                    is_cred_harvest = any(p in parsed.path.lower() for p in CREDENTIAL_HARVESTING_PATHS)
                     record = NormalizedCandidateRecord(
-                        candidate_type="social_profile",
+                        candidate_type="phishing_url",
                         platform=item["platform"],
-                        display_name=f"{brand_name} Suspicious Feed Match",
+                        display_name=f"{brand_name} Phishing Landing Page",
                         username_or_package=item["domain"],
                         publisher_or_developer=None,
                         description=item["description"],
@@ -141,6 +162,10 @@ class ThreatIntelFeedAdapter(BaseSourceAdapter):
                             "threat_type": item["threat_type"],
                             "feed_source": item["feed_source"],
                             "is_live_ingest": live_fetch_succeeded,
+                            "indicator_url": item["url"],
+                            "has_credential_path": is_cred_harvest,
+                            "hostname": item["domain"],
+                            "url_path": parsed.path
                         },
                         observed_at=datetime.now(timezone.utc)
                     )

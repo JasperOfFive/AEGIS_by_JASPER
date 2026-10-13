@@ -26,6 +26,7 @@ class AIExplanationResponse(BaseModel):
     generated_at: Optional[datetime] = None
     cached: bool = False
     explanation: AIExplanationStructured
+    ai_explanation: Optional[AIExplanationStructured] = None
     error_message: Optional[str] = None
 
 

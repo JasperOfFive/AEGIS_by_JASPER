@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAegis } from '../context/AegisContext';
-import { User, Building, Bell, Key, Moon, Sun, Check } from 'lucide-react';
+import { User, Building, Bell, Key, Moon, Sun, Check, LogOut } from 'lucide-react';
 
 export const SettingsPage: React.FC = () => {
-  const { theme, toggleTheme, seedDemoData, resetDatabase } = useAegis();
+  const { theme, toggleTheme, currentUser, logout } = useAegis();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'profile' | 'organization' | 'notifications' | 'api'>('profile');
   const [savedNotice, setSavedNotice] = useState(false);
 
-  const [analystName, setAnalystName] = useState('Alex Carter');
-  const [analystEmail, setAnalystEmail] = useState('alex.carter@aegis-intel.io');
+  const [analystName, setAnalystName] = useState(currentUser?.name || 'Alex Carter');
+  const [analystEmail, setAnalystEmail] = useState(currentUser?.email || 'alex.carter@aegis-intel.io');
   const [orgName, setOrgName] = useState('Acme Global SecOps');
   const [emailAlerts, setEmailAlerts] = useState(true);
   const [slackAlerts, setSlackAlerts] = useState(true);
@@ -71,21 +73,35 @@ export const SettingsPage: React.FC = () => {
       >
         {activeTab === 'profile' && (
           <div className="space-y-4">
-            <div className="flex items-center gap-4 pb-4 border-b" style={{ borderColor: 'var(--border-color)' }}>
-              <div
-                className="w-14 h-14 rounded-full font-bold text-lg flex items-center justify-center border"
-                style={{
-                  backgroundColor: 'var(--primary-accent-muted)',
-                  borderColor: 'var(--primary-accent)',
-                  color: 'var(--primary-accent)'
+            <div className="flex items-center justify-between pb-4 border-b" style={{ borderColor: 'var(--border-color)' }}>
+              <div className="flex items-center gap-4">
+                <div
+                  className="w-14 h-14 rounded-full font-bold text-lg flex items-center justify-center border"
+                  style={{
+                    backgroundColor: 'var(--primary-accent-muted)',
+                    borderColor: 'var(--primary-accent)',
+                    color: 'var(--primary-accent)'
+                  }}
+                >
+                  {analystName.split(' ').map(n => n[0]).join('').slice(0, 2) || 'AC'}
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>{analystName}</h3>
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Lead SecOps Analyst • Threat Recon Division</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  logout();
+                  navigate('/login');
                 }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                style={{ borderColor: 'rgba(244, 63, 94, 0.4)' }}
               >
-                AC
-              </div>
-              <div>
-                <h3 className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>{analystName}</h3>
-                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Lead SecOps Analyst • Threat Recon Division</span>
-              </div>
+                <LogOut size={13} />
+                <span>Sign Out</span>
+              </button>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -207,68 +223,6 @@ export const SettingsPage: React.FC = () => {
 
         {activeTab === 'api' && (
           <div className="space-y-4">
-            <div className="p-4 rounded-xl border space-y-3" style={{ backgroundColor: 'var(--card-sub-bg)', borderColor: 'var(--border-color)' }}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>FastAPI Backend Services</h4>
-                  <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Core deterministic detection rules, SQLite persistence & Alembic migrations</p>
-                </div>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                  v1.0.0 Online
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
-                <div className="p-2 rounded bg-black/5 dark:bg-white/5">
-                  <span className="text-[#A7AAA6] block">Endpoint Prefix:</span>
-                  <span style={{ color: 'var(--text-primary)' }}>/api/v1</span>
-                </div>
-                <div className="p-2 rounded bg-black/5 dark:bg-white/5">
-                  <span className="text-[#A7AAA6] block">AI Service:</span>
-                  <span style={{ color: 'var(--text-primary)' }}>Apinex DeepSeek v4.1</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-4 rounded-xl border space-y-2.5" style={{ backgroundColor: 'var(--card-sub-bg)', borderColor: 'var(--border-color)' }}>
-              <h4 className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>Demonstration Controls & Seed Data</h4>
-              <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                Populate verified brand Acme Finance Group, 5 official assets, and run an automated multi-surface reconnaissance scan.
-              </p>
-              <div className="flex items-center gap-3 pt-1">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      await seedDemoData();
-                      alert('Acme Finance Group seeded and baseline scan completed!');
-                    } catch {
-                      alert('Seed action encountered an error.');
-                    }
-                  }}
-                  className="px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all"
-                  style={{
-                    backgroundColor: 'var(--primary-accent-muted)',
-                    borderColor: 'var(--primary-accent)',
-                    color: 'var(--primary-accent)'
-                  }}
-                >
-                  ⚡ Seed Acme Finance Demo
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (confirm('Are you sure you want to reset all brands, findings, and scans in the database?')) {
-                      await resetDatabase();
-                      alert('Database reset complete.');
-                    }
-                  }}
-                  className="px-3.5 py-2 rounded-xl text-xs font-medium border text-rose-400 border-rose-500/20 hover:bg-rose-500/10 transition-colors"
-                >
-                  Reset Database
-                </button>
-              </div>
-            </div>
-
             <div>
               <label className="text-xs block mb-1" style={{ color: 'var(--text-secondary)' }}>AEGIS Ingestion API Token</label>
               <div className="flex gap-2">

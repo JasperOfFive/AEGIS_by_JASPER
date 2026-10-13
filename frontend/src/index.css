@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 :root {
   /* Dark mode: Bluish and blackish theme (deep midnight black with cyber slate & sky blue shades) */
@@ -20,20 +21,23 @@
   --nav-hover-bg: #0F1829;
   --card-glow: 0 4px 20px -4px rgba(2, 6, 23, 0.8), 0 0 16px -4px rgba(56, 189, 248, 0.12);
   --target-cursor-color: #38BDF8;
+  --ease-out-smooth: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-/* Light mode: Orangish and brownish theme (warm creamy ivory, sand & pastel orange #FF8D5C shades) */
+/* Light mode: Orangish and brownish theme (warm creamy ivory, sand & deep terracotta/espresso for crystal-clear readability) */
 html.light {
   --bg-main: #F7EEE5;
   --bg-surface: #F1E2D4;
   --bg-surface-elevated: #E8D2BE;
   --border-color: #D7B69B;
-  --border-color-hover: #FF8D5C;
-  --primary-accent: #FF8D5C;
-  --primary-accent-muted: rgba(255, 141, 92, 0.18);
-  --text-primary: #331F14;
-  --text-secondary: #745E50;
-  --text-muted: #917C6F;
+  --border-color-hover: #E0703C;
+  --primary-accent: #C2410C;
+  --primary-accent-muted: rgba(194, 65, 12, 0.16);
+  --text-primary: #23120B;
+  --text-secondary: #573E30;
+  --text-muted: #6B5141;
   --card-bg: #F1E2D4;
   --card-sub-bg: #E8D2BE;
   --topbar-bg: rgba(247, 238, 229, 0.94);
@@ -52,7 +56,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   min-height: 100vh;
-  transition: background-color 0.25s ease, color 0.25s ease;
+  transition: background-color 0.25s var(--ease-in-out-smooth), color 0.25s var(--ease-in-out-smooth);
 }
 
 ::selection {
@@ -60,27 +64,39 @@ body {
   color: var(--text-primary);
 }
 
-/* Custom scrollbars */
+/* Custom scrollbars - hidden to eliminate faint reddish scrollbars */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 0px;
+  height: 0px;
+  display: none;
+}
+::-webkit-scrollbar:horizontal {
+  display: none;
+  height: 0px;
+}
+::-webkit-scrollbar:vertical {
+  display: none;
+  width: 0px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--primary-accent-muted);
-  border-radius: 9999px;
+  background: transparent;
 }
-::-webkit-scrollbar-thumb:hover {
-  background: var(--primary-accent);
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .aegis-card {
   background-color: var(--card-bg);
   border: 1px solid var(--border-color);
   box-shadow: var(--card-glow);
-  transition: border-color 0.2s ease, background-color 0.25s ease, box-shadow 0.2s ease;
+  transition: border-color 0.22s var(--ease-out-smooth),
+              background-color 0.25s ease,
+              box-shadow 0.25s var(--ease-out-smooth),
+              transform 0.22s var(--ease-out-smooth);
 }
 
 .aegis-card:hover {
@@ -90,7 +106,7 @@ body {
 .aegis-sub-card {
   background-color: var(--card-sub-bg);
   border: 1px solid var(--border-color);
-  transition: background-color 0.25s ease;
+  transition: background-color 0.25s ease, border-color 0.22s var(--ease-out-smooth);
 }
 
 .aegis-text-primary {
@@ -119,6 +135,7 @@ body {
   --rg-border-color-1: rgba(56, 189, 248, 0.85);
   --rg-border-color-2: rgba(56, 189, 248, 0.25);
   box-shadow: 0 4px 20px -2px rgba(56, 189, 248, 0.25), 0 0 0 1px rgba(56, 189, 248, 0.35);
+  transition: transform 0.22s var(--ease-out-smooth), box-shadow 0.25s var(--ease-out-smooth), filter 0.22s ease;
 }
 
 :root:not(.light) .rg-button:hover {
@@ -140,6 +157,7 @@ html.light .rg-button {
   --rg-border-color-1: rgba(255, 141, 92, 0.85);
   --rg-border-color-2: rgba(255, 141, 92, 0.35);
   box-shadow: 0 4px 20px -2px rgba(255, 141, 92, 0.25), 0 0 0 1px rgba(255, 141, 92, 0.35);
+  transition: transform 0.22s var(--ease-out-smooth), box-shadow 0.25s var(--ease-out-smooth), filter 0.22s ease;
 }
 
 html.light .rg-button:hover {
@@ -151,3 +169,80 @@ html.light .rg-button:hover {
   --rg-border-color-2: rgba(255, 141, 92, 0.55);
   box-shadow: 0 6px 24px -2px rgba(255, 141, 92, 0.4), 0 0 0 1px rgba(255, 141, 92, 0.55);
 }
+
+/* Refined Keyframes & Micro-Animations */
+@keyframes fadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.24s var(--ease-out-smooth) forwards;
+}
+
+@keyframes scaleIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.975);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.22s var(--ease-out-smooth) forwards;
+}
+
+@keyframes slideUp {
+  0% {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.28s var(--ease-out-smooth) forwards;
+}
+
+/* Authentication Shake & Success Animations */
+@keyframes authShake {
+  0%, 100% { transform: translateX(0); }
+  15%, 45%, 75% { transform: translateX(-8px); }
+  30%, 60%, 90% { transform: translateX(8px); }
+}
+
+.animate-auth-shake {
+  animation: authShake 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+@keyframes authSuccessPulse {
+  0% { transform: scale(0.97); opacity: 0; }
+  50% { transform: scale(1.015); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.animate-auth-success {
+  animation: authSuccessPulse 0.4s var(--ease-out-smooth) forwards;
+}
+
+/* Smooth motion accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+

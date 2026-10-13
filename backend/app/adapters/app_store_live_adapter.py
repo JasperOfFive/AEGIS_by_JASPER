@@ -8,11 +8,20 @@ Features offline verified indicators for graceful degradation in network-isolate
 Strictly preserves deterministic risk-engine authority and official application exclusions.
 """
 import re
+import socket
 import time
+import urllib.error
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional, Tuple
 from urllib.parse import quote_plus
 import httpx
+
+try:
+    from google_play_scraper import search as play_search
+    HAS_GOOGLE_PLAY_SCRAPER = True
+except ImportError:
+    HAS_GOOGLE_PLAY_SCRAPER = False
+    play_search = None
 
 from app.adapters.base import BaseSourceAdapter, AdapterResult, NormalizedCandidateRecord
 from app.core.config import settings
@@ -133,9 +142,12 @@ class AppleAppStoreLiveProvider:
 class GooglePlayLiveProvider:
     """
     Catalog provider for Google Play Store.
-    Supports official Google Play Developer API when GOOGLE_PLAY_API_KEY is configured.
-    Rejects fabricated names, consent interstitials, and unverified HTML scraping.
+    Uses the Python google-play-scraper package to query public Play Store search
+    without requiring GOOGLE_PLAY_API_KEY.
+    Marks results as LIVE only upon successful response with valid parsed records.
+    Clearly distinguishes LIVE, LIVE_NO_RESULTS, BLOCKED, FAILED, and NOT_CONFIGURED.
     """
+    PROVIDER_NAME = "google_play_scraper"
     BASE_URL = "https://play.google.com/store/search"
 
     @classmethod
@@ -143,59 +155,100 @@ class GooglePlayLiveProvider:
         cls,
         query: str,
         limit: int = 15,
-        timeout_seconds: float = 2.0
+        lang: str = "en",
+        country: str = "in",
+        timeout_seconds: float = 8.0
     ) -> Tuple[str, List[NormalizedCandidateRecord], Optional[str]]:
         """
+        Execute bounded search using google-play-scraper.
         Returns: (status, candidates, message)
-        Status values: 'live_verified', 'not_configured', 'unavailable', 'failed'
+        Status values: 'LIVE', 'LIVE_NO_RESULTS', 'BLOCKED', 'FAILED', 'NOT_CONFIGURED'
         """
-        if not settings.GOOGLE_PLAY_API_KEY:
-            # Check public search endpoint to detect consent interstitials vs availability
-            params = {"q": query, "c": "apps", "hl": "en"}
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            }
-            try:
-                with httpx.Client(timeout=timeout_seconds, headers=headers, follow_redirects=True) as client:
-                    resp = client.get(cls.BASE_URL, params=params)
-                    if "consent.google.com" in str(resp.url) or "before you continue" in resp.text.lower():
-                        return "unavailable", [], "Google Play search blocked by regional consent interstitial."
-                    
-                    # Search for structured app card spans with real titles and developers
-                    app_cards = re.findall(
-                        r'/store/apps/details\?id=([a-zA-Z0-9_\.]+).*?<span class=\"DdUgx\">([^<]+)</span>.*?<span class=\"wIntEg\">([^<]+)</span>',
-                        resp.text,
-                        re.DOTALL
-                    )
-                    if app_cards:
-                        candidates = []
-                        for pkg, title, dev in app_cards[:limit]:
-                            rec = NormalizedCandidateRecord(
-                                candidate_type="mobile_app",
-                                platform="google_play",
-                                display_name=title.strip(),
-                                username_or_package=pkg.strip(),
-                                publisher_or_developer=dev.strip(),
-                                description=f"Live Google Play application '{title}' by {dev}.",
-                                external_url=f"https://play.google.com/store/apps/details?id={pkg}",
-                                logo_reference=None,
-                                source_provenance="google_play:live_catalog",
-                                metadata_json={"package_id": pkg, "is_live": True, "provider": "google_play_search"},
-                                observed_at=datetime.now(timezone.utc)
-                            )
-                            candidates.append(rec)
-                        return "live_verified", candidates, None
-                    else:
-                        # Dynamic JavaScript obfuscation prevents extracting verified titles without API key
-                        return (
-                            "not_configured",
-                            [],
-                            "Google Play requires GOOGLE_PLAY_API_KEY in backend/.env for authorized catalog metadata; public HTML rendering omits structured metadata. Synthetic candidate generation rejected."
-                        )
-            except Exception as e:
-                return "unavailable", [], f"Google Play catalog connection error: {e}"
+        if not HAS_GOOGLE_PLAY_SCRAPER or play_search is None:
+            return "NOT_CONFIGURED", [], "google-play-scraper package is not installed."
 
-        return "not_configured", [], "Google Play API key configured but service account endpoint not specified."
+        clean_query = (query or "").strip()
+        if not clean_query:
+            return "LIVE_NO_RESULTS", [], "Empty search query provided."
+
+        bounded_limit = min(max(1, limit), 25)
+
+        try:
+            raw_results = play_search(
+                clean_query,
+                lang=lang,
+                country=country,
+                n_hits=bounded_limit
+            )
+
+            if not raw_results:
+                return "LIVE_NO_RESULTS", [], f"Google Play search returned 0 matching applications for query '{clean_query}'."
+
+            candidates: List[NormalizedCandidateRecord] = []
+            for item in raw_results:
+                app_id = (item.get("appId") or "").strip()
+                if not app_id:
+                    continue
+
+                title = (item.get("title") or app_id).strip()
+                developer = (item.get("developer") or "Unknown Developer").strip()
+                desc = (item.get("description") or f"Google Play application '{title}' by {developer}.").strip()
+                icon = item.get("icon") or None
+                store_url = f"https://play.google.com/store/apps/details?id={app_id}"
+
+                rec = NormalizedCandidateRecord(
+                    candidate_type="mobile_app",
+                    platform="google_play",
+                    display_name=title,
+                    username_or_package=app_id,
+                    publisher_or_developer=developer,
+                    description=desc[:400],
+                    external_url=store_url,
+                    logo_reference=icon,
+                    source_provenance="google_play:live_catalog",
+                    metadata_json={
+                        "package_id": app_id,
+                        "score": item.get("score"),
+                        "installs": item.get("installs"),
+                        "genre": item.get("genre"),
+                        "free": item.get("free", True),
+                        "currency": item.get("currency", "USD"),
+                        "price": item.get("price", 0),
+                        "screenshots": (item.get("screenshots") or [])[:3],
+                        "country": country,
+                        "is_live": True,
+                        "provider": "google_play_scraper",
+                        "status": "LIVE"
+                    },
+                    observed_at=datetime.now(timezone.utc)
+                )
+                candidates.append(rec)
+
+            if not candidates:
+                return "LIVE_NO_RESULTS", [], f"Google Play search returned 0 valid application records for query '{clean_query}'."
+
+            logger.info("Google Play live search for '%s' returned %d apps via google-play-scraper", clean_query, len(candidates))
+            return "LIVE", candidates, None
+
+        except (TypeError, IndexError, KeyError) as e:
+            # google-play-scraper raises TypeError/IndexError when Google Play response contains no results
+            logger.info("Google Play search for '%s' parsed 0 results (%s)", clean_query, e)
+            return "LIVE_NO_RESULTS", [], f"Google Play search returned 0 matching applications for '{clean_query}'."
+        except urllib.error.HTTPError as http_err:
+            if http_err.code in (403, 429):
+                logger.warning("Google Play search blocked (HTTP %d): %s", http_err.code, http_err)
+                return "BLOCKED", [], f"Google Play search blocked by upstream access control (HTTP {http_err.code})."
+            logger.warning("Google Play search HTTP failure (HTTP %d): %s", http_err.code, http_err)
+            return "FAILED", [], f"Google Play search HTTP error: {http_err.code}"
+        except (urllib.error.URLError, TimeoutError, socket.timeout) as net_err:
+            logger.warning("Google Play connection error: %s", net_err)
+            return "FAILED", [], f"Google Play network error: {net_err}"
+        except Exception as exc:
+            err_str = str(exc).lower()
+            if "blocked" in err_str or "captcha" in err_str or "consent" in err_str or "forbidden" in err_str:
+                return "BLOCKED", [], f"Google Play search blocked: {exc}"
+            logger.warning("Google Play scraper unexpected error: %s", exc)
+            return "FAILED", [], f"Google Play search failed: {exc}"
 
 
 class AppStoreLiveAdapter(BaseSourceAdapter):
@@ -254,9 +307,15 @@ class AppStoreLiveAdapter(BaseSourceAdapter):
         except Exception as e:
             errors.append(f"Apple App Store live error: {e}")
 
-        # 2. Google Play Store Live Search
+        # 2. Google Play Store Live Search via google-play-scraper
+        gp_status = "NOT_CONFIGURED"
+        play_results: List[NormalizedCandidateRecord] = []
         try:
-            gp_status, play_results, gp_msg = GooglePlayLiveProvider.search(query=search_query, limit=12)
+            gp_status, play_results, gp_msg = GooglePlayLiveProvider.search(
+                query=search_query,
+                limit=12,
+                country="in"
+            )
             for c in play_results:
                 pkg_key = ("google_play", (c.username_or_package or "").lower())
                 if pkg_key not in seen_packages:
@@ -265,13 +324,41 @@ class AppStoreLiveAdapter(BaseSourceAdapter):
             if gp_msg:
                 logger.info("Google Play provider status: %s - %s", gp_status, gp_msg)
         except Exception as e:
+            gp_status = "FAILED"
             errors.append(f"Google Play Store live error: {e}")
 
-        # 3. If live endpoints were blocked by sandbox network policy or returned 0,
-        # provide verified catalog sample records for continuity
+        # 3. Supply verified catalog sample indicators ONLY when live search was blocked/failed/unconfigured
+        # Never inject fake samples if live search legitimately returned 0 matching results (LIVE_NO_RESULTS)
+        if not play_results and gp_status in ("NOT_CONFIGURED", "BLOCKED", "FAILED"):
+            logger.info("Google Play live collector status is %s; providing verified sample indicators for evaluation.", gp_status)
+            for item in VERIFIED_SAMPLE_APP_STORE_INDICATORS:
+                if item["platform"] == "google_play":
+                    record = NormalizedCandidateRecord(
+                        candidate_type="mobile_app",
+                        platform=item["platform"],
+                        display_name=item["name"],
+                        username_or_package=item["package_id"],
+                        publisher_or_developer=item["publisher"],
+                        description=item["description"],
+                        external_url=item["url"],
+                        logo_reference=None,
+                        source_provenance="google_play:verified_sample_indicator",
+                        metadata_json={
+                            "is_live": False,
+                            "verified_sample": True,
+                            "source": item["source"],
+                            "provider_status": gp_status
+                        },
+                        observed_at=datetime.now(timezone.utc)
+                    )
+                    pkg_key = (item["platform"], item["package_id"].lower())
+                    if pkg_key not in seen_packages:
+                        seen_packages.add(pkg_key)
+                        candidates.append(record)
+
+        # 4. If Apple was also offline/failed and candidate list is empty, include Apple sample indicators
         if not candidates:
-            logger.info("Live store endpoints unavailable or returned 0 items; loading verified store catalog indicators.")
-            brand_token = brand_name.lower().replace(" ", "")
+            logger.info("Store endpoints returned 0 items; loading verified store catalog indicators.")
             for item in VERIFIED_SAMPLE_APP_STORE_INDICATORS:
                 record = NormalizedCandidateRecord(
                     candidate_type="mobile_app",

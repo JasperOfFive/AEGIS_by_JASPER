@@ -33,7 +33,28 @@ class BrandResponse(BrandBase):
     assets_count: Optional[int] = 0
     scans_count: Optional[int] = 0
     findings_count: Optional[int] = 0
+    schedule_enabled: bool = False
+    schedule_interval_hours: int = 24
+    last_scheduled_run_at: Optional[datetime] = None
+    next_scheduled_run_at: Optional[datetime] = None
 
 
 class BrandDetailResponse(BrandResponse):
     assets: List[BrandAssetResponse] = []
+
+
+class BrandScheduleUpdate(BaseModel):
+    schedule_enabled: bool = Field(..., description="Whether recurring scans are enabled for this brand")
+    schedule_interval_hours: int = Field(24, ge=1, le=720, description="Interval between scans in hours (1-720)")
+
+
+class BrandScheduleResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    brand_id: str
+    brand_name: str
+    schedule_enabled: bool
+    schedule_interval_hours: int
+    last_scheduled_run_at: Optional[datetime] = None
+    next_scheduled_run_at: Optional[datetime] = None
+    is_currently_scanning: bool = False

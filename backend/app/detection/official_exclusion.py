@@ -13,6 +13,8 @@ class ExclusionDecision(str, Enum):
     CONFIRMED_OFFICIAL_MATCH = "confirmed_official_match"
     LIKELY_OFFICIAL_MATCH = "likely_official_match"
     POTENTIAL_IMPERSONATION = "potential_impersonation"
+    SUSPICIOUS_NEEDS_REVIEW = "suspicious_needs_review"
+    CONFIRMED_PHISHING = "confirmed_phishing"
     INSUFFICIENT_EVIDENCE = "insufficient_evidence"
 
 
@@ -50,6 +52,26 @@ def evaluate_official_exclusion(
     norm_c_pub = normalize_text(c_pub)
     norm_brand_domain = normalize_domain(brand_website or "")
 
+    # Extract candidate domain for domain/phishing candidates
+    from urllib.parse import urlparse
+    c_domain_val = norm_c_user
+    if c_url and isinstance(c_url, str):
+        parsed_c_url = urlparse(c_url)
+        if parsed_c_url.netloc:
+            c_domain_val = normalize_domain(parsed_c_url.netloc)
+
+    # Direct match against primary brand website
+    if norm_brand_domain and c_domain_val:
+        if c_domain_val == norm_brand_domain or c_domain_val.endswith(f".{norm_brand_domain}"):
+            return ExclusionResult(
+                decision=ExclusionDecision.CONFIRMED_OFFICIAL_MATCH,
+                is_excluded_from_findings=True,
+                matched_asset_id=None,
+                matched_asset_type="official_domain",
+                matched_asset_value=norm_brand_domain,
+                reason=f"Candidate domain '{c_domain_val}' matches primary official brand website domain."
+            )
+
     for asset in registered_assets:
         a_id = getattr(asset, "id", None) or (asset.get("id") if isinstance(asset, dict) else None)
         a_type = getattr(asset, "asset_type", None) or (asset.get("asset_type") if isinstance(asset, dict) else "")
@@ -57,6 +79,20 @@ def evaluate_official_exclusion(
         a_norm_id = getattr(asset, "normalized_identifier", None) or (asset.get("normalized_identifier") if isinstance(asset, dict) else "")
         a_val = getattr(asset, "display_value", None) or (asset.get("display_value") if isinstance(asset, dict) else "")
         a_url = getattr(asset, "url", None) or (asset.get("url") if isinstance(asset, dict) else "")
+
+        # 0. Official Domain Check
+        if a_type == "official_domain":
+            norm_a_dom = normalize_domain(a_val or a_url or "")
+            if norm_a_dom and c_domain_val:
+                if c_domain_val == norm_a_dom or c_domain_val.endswith(f".{norm_a_dom}"):
+                    return ExclusionResult(
+                        decision=ExclusionDecision.CONFIRMED_OFFICIAL_MATCH,
+                        is_excluded_from_findings=True,
+                        matched_asset_id=str(a_id) if a_id else None,
+                        matched_asset_type=a_type,
+                        matched_asset_value=a_val,
+                        reason=f"Candidate domain '{c_domain_val}' matches registered official brand domain '{norm_a_dom}'."
+                    )
 
         # 1. Official Social Account Check
         if a_type == "official_social_account" and c_type == "social_profile":
@@ -88,13 +124,21 @@ def evaluate_official_exclusion(
             if a_plat == c_platform or not a_plat:
                 # Compare exact package ID / bundle ID
                 if normalize_package_id(a_norm_id) == norm_c_pkg and norm_c_pkg != "":
+                    lifecycle = (getattr(asset, "lifecycle_status", None) or (asset.get("lifecycle_status") if isinstance(asset, dict) else "active") or "active").lower()
+                    if lifecycle == "retired":
+                        match_reason = f"Candidate package ID '{c_user_pkg}' matches registered official retired brand asset (decommissioned/archived). Not an impersonation threat."
+                    elif lifecycle == "legacy":
+                        match_reason = f"Candidate package ID '{c_user_pkg}' matches registered official legacy brand asset. Not an impersonation threat."
+                    else:
+                        match_reason = f"Candidate application package ID '{c_user_pkg}' exactly matches registered active official mobile application asset."
+
                     return ExclusionResult(
                         decision=ExclusionDecision.CONFIRMED_OFFICIAL_MATCH,
                         is_excluded_from_findings=True,
                         matched_asset_id=str(a_id) if a_id else None,
                         matched_asset_type=a_type,
                         matched_asset_value=a_val,
-                        reason=f"Candidate application package ID '{c_user_pkg}' exactly matches registered official mobile application asset."
+                        reason=match_reason
                     )
                 # Compare exact listing URL
                 if a_url and c_url and a_url.rstrip("/").lower() == c_url.rstrip("/").lower():

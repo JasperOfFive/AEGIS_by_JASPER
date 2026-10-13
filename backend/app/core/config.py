@@ -1,6 +1,10 @@
 import os
 from pathlib import Path
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
 
 
 class Settings(BaseSettings):
@@ -9,11 +13,21 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     
     # Base paths
-    BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
+    BASE_DIR: Path = BASE_DIR
     DATA_DIR: Path = BASE_DIR / "data"
     
     # Database
     DATABASE_URL: str = f"sqlite:///{BASE_DIR}/aegis.db"
+
+    @field_validator("DATABASE_URL", mode="after")
+    @classmethod
+    def resolve_database_url(cls, v: str) -> str:
+        if v.startswith("sqlite:///./"):
+            return f"sqlite:///{BASE_DIR / v[len('sqlite:///./'):]}"
+        elif v.startswith("sqlite:///") and not v.startswith("sqlite:////"):
+            rel_path = v[len("sqlite/"):]
+            return f"sqlite:///{BASE_DIR / rel_path}"
+        return v
     
     # CORS
     CORS_ORIGINS: list[str] = [
@@ -22,9 +36,17 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:8000",
-        "http://127.0.0.1:8000",
-        "*"
+        "http://127.0.0.1:8000"
     ]
+
+    @field_validator("CORS_ORIGINS", mode="after")
+    @classmethod
+    def sanitize_cors(cls, v: list[str]) -> list[str]:
+        return [origin for origin in v if origin.strip() and origin != "*"]
+    
+    # Administrative & Security Protections
+    AEGIS_ADMIN_TOKEN: str = "aegis-confirmed-demo-reset"
+    ALLOW_DEMO_RESET: bool = False
     
     # Detection Scoring Weights (Social)
     WEIGHT_SOCIAL_NAME: float = 25.0
@@ -59,7 +81,7 @@ class Settings(BaseSettings):
     GOOGLE_PLAY_API_KEY: str = ""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(str(BASE_DIR / ".env"), ".env"),
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore"

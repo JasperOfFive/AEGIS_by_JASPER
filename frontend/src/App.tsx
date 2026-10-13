@@ -13,6 +13,7 @@ import { FindingsPage } from './pages/FindingsPage';
 import { ScanHistoryPage } from './pages/ScanHistoryPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { AuthPage } from './pages/AuthPage';
 import TargetCursor from './components/react-bits/TargetCursor';
 
 function AppContent() {
@@ -35,6 +36,11 @@ function AppContent() {
         <Routes>
           {/* Public Marketing Landing Page */}
           <Route path="/" element={<LandingPage />} />
+
+          {/* Authentication Routes */}
+          <Route path="/login" element={<AuthPage initialMode="login" />} />
+          <Route path="/signup" element={<AuthPage initialMode="signup" />} />
+          <Route path="/auth" element={<AuthPage />} />
 
           {/* Connected Authenticated App Shell */}
           <Route path="/app" element={<AppShell />}>

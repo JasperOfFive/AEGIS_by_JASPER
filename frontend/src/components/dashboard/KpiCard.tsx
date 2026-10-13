@@ -35,7 +35,7 @@ export const KpiCard: React.FC<KpiCardProps> = ({
         borderColor: 'var(--border-color)',
         boxShadow: 'var(--card-glow)'
       }}
-      className="p-5 rounded-2xl border hover:scale-[1.01] transition-all duration-200 cursor-pointer relative overflow-hidden group flex flex-col justify-between"
+      className="p-5 rounded-2xl border hover:scale-[1.015] hover:-translate-y-0.5 transition-all duration-250 ease-out cursor-pointer relative overflow-hidden group flex flex-col justify-between"
     >
       <div className="flex items-center justify-between mb-3">
         <span
@@ -45,7 +45,7 @@ export const KpiCard: React.FC<KpiCardProps> = ({
           {title}
         </span>
         <div
-          className="w-8 h-8 rounded-xl border flex items-center justify-center group-hover:scale-110 transition-transform"
+          className="w-8 h-8 rounded-xl border flex items-center justify-center group-hover:scale-110 transition-transform duration-250 ease-out"
           style={{
             backgroundColor: 'var(--card-sub-bg)',
             borderColor: 'var(--border-color)',
@@ -87,7 +87,7 @@ export const KpiCard: React.FC<KpiCardProps> = ({
                   backgroundColor: finalAccent,
                   opacity: 0.35 + (idx / sparklineData.length) * 0.65
                 }}
-                className="w-1.5 rounded-full transition-all group-hover:opacity-100"
+                className="w-1.5 rounded-full transition-all duration-300 ease-out group-hover:opacity-100"
               />
             );
           })}

@@ -49,3 +49,32 @@ def update_brand(brand_id: str, payload: BrandUpdate, db: Session = Depends(get_
 @router.delete("/{brand_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_brand(brand_id: str, db: Session = Depends(get_db)):
     BrandService.delete(db, brand_id)
+
+
+# Recurring Scan Schedule Endpoints
+from app.schemas.brand import BrandScheduleUpdate, BrandScheduleResponse
+from app.services.scheduler_service import SchedulerService
+
+
+@router.get("/{brand_id}/schedule", response_model=BrandScheduleResponse)
+def get_brand_schedule(brand_id: str, db: Session = Depends(get_db)):
+    return SchedulerService.get_schedule(db, brand_id)
+
+
+@router.put("/{brand_id}/schedule", response_model=BrandScheduleResponse)
+def update_brand_schedule(brand_id: str, payload: BrandScheduleUpdate, db: Session = Depends(get_db)):
+    return SchedulerService.update_schedule(
+        db=db,
+        brand_id=brand_id,
+        enabled=payload.schedule_enabled,
+        interval_hours=payload.schedule_interval_hours
+    )
+
+
+@router.post("/{brand_id}/schedule/run-now")
+def run_brand_schedule_now(brand_id: str, db: Session = Depends(get_db)):
+    from app.services.scan_service import ScanService
+    from app.schemas.scan import ScanTriggerRequest
+    req = ScanTriggerRequest(brand_id=brand_id, requested_source_types=["social", "app_store"])
+    scan = ScanService.trigger_scan(db, req, run_synchronous=False)
+    return {"message": "Scan dispatched", "scan_id": scan.id, "status": scan.status}
