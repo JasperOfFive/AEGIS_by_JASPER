@@ -1,0 +1,16 @@
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Python cache & virtualenv
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+.pytest_cache/

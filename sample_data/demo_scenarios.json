@@ -1,0 +1,99 @@
+{
+  "brand": {
+    "name": "Acme Finance Group",
+    "description": "Global corporate banking, enterprise financial APIs, and digital wealth management services.",
+    "industry": "Financial Services & Banking",
+    "primary_website": "https://acmefinance.com",
+    "is_active": true,
+    "official_assets": [
+      {
+        "asset_type": "official_domain",
+        "platform": "web",
+        "display_value": "acmefinance.com",
+        "normalized_identifier": "acmefinance.com",
+        "url": "https://acmefinance.com",
+        "verification_status": "verified"
+      },
+      {
+        "asset_type": "official_social_account",
+        "platform": "instagram",
+        "display_value": "@acmefinance",
+        "normalized_identifier": "acmefinance",
+        "url": "https://instagram.com/acmefinance",
+        "verification_status": "verified"
+      },
+      {
+        "asset_type": "official_mobile_app",
+        "platform": "google_play",
+        "display_value": "com.acme.finance.app",
+        "normalized_identifier": "com.acme.finance.app",
+        "url": "https://play.google.com/store/apps/details?id=com.acme.finance.app",
+        "verification_status": "verified"
+      },
+      {
+        "asset_type": "official_publisher",
+        "platform": "google_play",
+        "display_value": "Acme Financial Group LLC",
+        "normalized_identifier": "acme financial group llc",
+        "verification_status": "verified"
+      },
+      {
+        "asset_type": "logo_image",
+        "platform": "all",
+        "display_value": "Official Brand Crest 2026",
+        "image_reference": "acme_official_logo_v1",
+        "verification_status": "verified"
+      }
+    ]
+  },
+  "threat_archetypes": [
+    {
+      "name": "Exact Official Account Exclusion",
+      "vector": "social",
+      "platform": "instagram",
+      "identifier": "@acmefinance",
+      "expected_outcome": "EXCLUDED (Risk: 0, Decision: confirmed_official_match)",
+      "rationale": "Exact match with registered official asset prevents false positive."
+    },
+    {
+      "name": "Single-Character Typosquatting",
+      "vector": "social",
+      "platform": "instagram",
+      "identifier": "@acmefinaance",
+      "expected_outcome": "FLAGGED CRITICAL (Risk >= 75)",
+      "rationale": "1-letter insertion typo designed to deceive searching users."
+    },
+    {
+      "name": "Character Transposition Typosquatting",
+      "vector": "social",
+      "platform": "linkedin",
+      "identifier": "@amcefinance",
+      "expected_outcome": "FLAGGED HIGH (Risk >= 65)",
+      "rationale": "Adjacent character transposition exploiting cognitive reading shortcuts."
+    },
+    {
+      "name": "Customer Care & Phishing Affix Abuse",
+      "vector": "social",
+      "platform": "facebook",
+      "identifier": "@acmefinance_helpdesk",
+      "expected_outcome": "FLAGGED CRITICAL (Risk >= 85)",
+      "rationale": "Brand name combined with 'helpdesk', 'customer support', and solicitation."
+    },
+    {
+      "name": "Malicious Look-Alike App with Cloned Icon",
+      "vector": "app_store",
+      "platform": "google_play",
+      "identifier": "com.acme.quickloan.fastpay",
+      "expected_outcome": "FLAGGED CRITICAL (Risk >= 80)",
+      "rationale": "Impersonates bank app, unverified publisher, and copies official icon."
+    },
+    {
+      "name": "Legitimate Unrelated Business (False-Positive Prevention)",
+      "vector": "social",
+      "platform": "instagram",
+      "identifier": "@acmeanvils",
+      "expected_outcome": "SAFE / LOW RISK (Risk < 35, Not flagged)",
+      "rationale": "Blacksmith shop shares word 'Acme' without brand targeting or deception."
+    }
+  ]
+}
