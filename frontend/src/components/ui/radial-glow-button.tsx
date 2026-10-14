@@ -36,7 +36,7 @@ export function RadialGlowButton({
         @property --rg-stop-5 { syntax: '<percentage>'; initial-value: 100%; inherits: false; }
 
         .rg-button {
-          --transition: 0.25s;
+          --transition: 1.2s;
           --spark: 1.8s;
           --speed: 1.2s;
           --cut: 1px;
@@ -67,11 +67,11 @@ export function RadialGlowButton({
           -webkit-font-smoothing: antialiased;
           -webkit-tap-highlight-color: transparent;
           transition: 
-            --rg-pos-x .75s, --rg-pos-y .75s,
-            --rg-spread-x .75s, --rg-spread-y .75s,
-            --rg-color-1 .75s, --rg-color-2 .75s, --rg-color-3 .75s, --rg-color-4 .75s, --rg-color-5 .75s,
-            --rg-border-angle .75s, --rg-border-color-1 .75s, --rg-border-color-2 .75s,
-            --rg-stop-1 .75s, --rg-stop-2 .75s, --rg-stop-3 .75s, --rg-stop-4 .75s, --rg-stop-5 .75s,
+            --rg-pos-x 1.2s, --rg-pos-y 1.2s,
+            --rg-spread-x 1.2s, --rg-spread-y 1.2s,
+            --rg-color-1 1.2s, --rg-color-2 1.2s, --rg-color-3 1.2s, --rg-color-4 1.2s, --rg-color-5 1.2s,
+            --rg-border-angle 1.2s, --rg-border-color-1 1.2s, --rg-border-color-2 1.2s,
+            --rg-stop-1 1.2s, --rg-stop-2 1.2s, --rg-stop-3 1.2s, --rg-stop-4 1.2s, --rg-stop-5 1.2s,
             box-shadow 0.25s ease, transform 0.15s ease;
           box-shadow: 0 4px 20px -2px rgba(232, 193, 139, 0.15), 0 0 0 1px rgba(232, 193, 139, 0.25);
         }
