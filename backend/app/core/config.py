@@ -4,6 +4,8 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+from typing import Any
+
 BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
 
 
@@ -39,10 +41,40 @@ class Settings(BaseSettings):
         "http://127.0.0.1:8000"
     ]
 
-    @field_validator("CORS_ORIGINS", mode="after")
+    @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
-    def sanitize_cors(cls, v: list[str]) -> list[str]:
-        return [origin for origin in v if origin.strip() and origin != "*"]
+    def sanitize_cors(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            import json
+            v_str = v.strip()
+            if v_str.startswith("[") and v_str.endswith("]"):
+                try:
+                    parsed = json.loads(v_str)
+                    if isinstance(parsed, list):
+                        v = parsed
+                except Exception:
+                    pass
+            if isinstance(v, str):
+                v = [item.strip() for item in v.split(",") if item.strip()]
+        if isinstance(v, list):
+            res = [
+                "http://localhost:5173",
+                "http://127.0.0.1:5173",
+                "http://localhost:3000",
+                "http://127.0.0.1:3000"
+            ]
+            for origin in v:
+                if not origin or origin == "*":
+                    continue
+                orig = str(origin).strip()
+                if orig:
+                    if not orig.startswith("http://") and not orig.startswith("https://"):
+                        res.append(f"https://{orig}")
+                        res.append(f"http://{orig}")
+                    else:
+                        res.append(orig)
+            return list(dict.fromkeys(res))
+        return v
     
     # Administrative & Security Protections
     AEGIS_ADMIN_TOKEN: str = "aegis-confirmed-demo-reset"
