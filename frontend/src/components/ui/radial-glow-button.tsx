@@ -38,7 +38,7 @@ export function RadialGlowButton({
         .rg-button {
           --transition: 0.75s;
           --spark: 1.8s;
-          --speed: 1.2s;
+          --speed: 4s;
           --cut: 1px;
           --bg: radial-gradient(
             var(--rg-spread-x) var(--rg-spread-y) at var(--rg-pos-x) var(--rg-pos-y),
