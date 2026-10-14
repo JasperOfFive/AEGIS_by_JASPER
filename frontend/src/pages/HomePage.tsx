@@ -124,10 +124,12 @@ export const HomePage: React.FC = () => {
           <div className="pt-4 flex flex-wrap items-center justify-center gap-3">
             <RadialGlowButton
               onClick={() => setIsScanWizardOpen(true)}
-              className="!px-5 !py-2.5 !text-xs font-semibold flex items-center gap-2 cursor-pointer"
+              className="!px-5 !py-2.5 !text-xs font-semibold cursor-pointer"
             >
-              <Sparkles size={14} style={{ color: 'var(--primary-accent)' }} />
-              Run New Scan →
+              <span className="inline-flex items-center justify-center gap-2 whitespace-nowrap">
+                <Sparkles size={14} style={{ color: 'var(--primary-accent)' }} />
+                <span>Run New Scan →</span>
+              </span>
             </RadialGlowButton>
 
             <button
