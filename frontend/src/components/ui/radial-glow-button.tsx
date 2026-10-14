@@ -36,7 +36,7 @@ export function RadialGlowButton({
         @property --rg-stop-5 { syntax: '<percentage>'; initial-value: 100%; inherits: false; }
 
         .rg-button {
-          --transition: 1.2s;
+          --transition: 0.75s;
           --spark: 1.8s;
           --speed: 1.2s;
           --cut: 1px;
@@ -67,11 +67,11 @@ export function RadialGlowButton({
           -webkit-font-smoothing: antialiased;
           -webkit-tap-highlight-color: transparent;
           transition: 
-            --rg-pos-x 1.2s, --rg-pos-y 1.2s,
-            --rg-spread-x 1.2s, --rg-spread-y 1.2s,
-            --rg-color-1 1.2s, --rg-color-2 1.2s, --rg-color-3 1.2s, --rg-color-4 1.2s, --rg-color-5 1.2s,
-            --rg-border-angle 1.2s, --rg-border-color-1 1.2s, --rg-border-color-2 1.2s,
-            --rg-stop-1 1.2s, --rg-stop-2 1.2s, --rg-stop-3 1.2s, --rg-stop-4 1.2s, --rg-stop-5 1.2s,
+            --rg-pos-x .75s, --rg-pos-y .75s,
+            --rg-spread-x .75s, --rg-spread-y .75s,
+            --rg-color-1 .75s, --rg-color-2 .75s, --rg-color-3 .75s, --rg-color-4 .75s, --rg-color-5 .75s,
+            --rg-border-angle .75s, --rg-border-color-1 .75s, --rg-border-color-2 .75s,
+            --rg-stop-1 .75s, --rg-stop-2 .75s, --rg-stop-3 .75s, --rg-stop-4 .75s, --rg-stop-5 .75s,
             box-shadow 0.25s ease, transform 0.15s ease;
           box-shadow: 0 4px 20px -2px rgba(232, 193, 139, 0.15), 0 0 0 1px rgba(232, 193, 139, 0.25);
         }
@@ -93,6 +93,7 @@ export function RadialGlowButton({
           --rg-border-angle: 190deg;
           --rg-border-color-1: hsla(38, 90%, 80%, 0.8);
           --rg-border-color-2: hsla(38, 60%, 70%, 0.45);
+          --button-line-opacity: 1;
           box-shadow: 0 6px 24px -2px rgba(232, 193, 139, 0.35), 0 0 0 1px rgba(232, 193, 139, 0.5);
           transform: translateY(-1px);
         }
@@ -136,13 +137,9 @@ export function RadialGlowButton({
           container-type: size;
           border-radius: inherit;
           mix-blend-mode: soft-light;
-          opacity: 0.35;
+          opacity: var(--button-line-opacity, 0);
           transition: opacity 0.3s;
           overflow: visible;
-        }
-
-        .rg-button:hover .rg-shine {
-          opacity: 0.8;
         }
 
         .rg-shine span {
