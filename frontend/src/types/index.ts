@@ -52,7 +52,7 @@ export interface Scan {
   id: string;
   brandName: string;
   brandId: string;
-  status: 'completed' | 'running' | 'queued' | 'failed';
+  status: 'completed' | 'partially_completed' | 'running' | 'queued' | 'failed';
   progress: number; // 0 - 100
   findingsCount: number;
   highPriorityCount: number;
