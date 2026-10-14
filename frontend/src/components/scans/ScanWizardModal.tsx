@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAegis } from '../../context/AegisContext';
+import { isDemoUser, useAegis } from '../../context/AegisContext';
 import { X, Play, CheckCircle2, AlertTriangle, Shield, Globe, Users, Smartphone, Database } from 'lucide-react';
 import { RadialGlowButton } from '../ui/radial-glow-button';
 
 export const ScanWizardModal: React.FC = () => {
   const navigate = useNavigate();
-  const { isScanWizardOpen, setIsScanWizardOpen, brands, runNewScan } = useAegis();
+  const { isScanWizardOpen, setIsScanWizardOpen, brands, currentUser, runNewScan } = useAegis();
   const [selectedBrandId, setSelectedBrandId] = useState(brands[0]?.id || '');
   const [scanType, setScanType] = useState('comprehensive');
   const [selectedTargets, setSelectedTargets] = useState<string[]>(['domains', 'social', 'mobile', 'darkweb']);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
 
   if (!isScanWizardOpen) return null;
 
@@ -21,11 +22,17 @@ export const ScanWizardModal: React.FC = () => {
   };
 
   const handleStartScan = async () => {
+    setSubmitError('');
     setIsSubmitting(true);
-    await runNewScan(selectedBrandId, selectedTargets, scanType);
-    setIsSubmitting(false);
-    setIsScanWizardOpen(false);
-    navigate('/app/scan-history');
+    try {
+      await runNewScan(selectedBrandId, selectedTargets, scanType);
+      setIsScanWizardOpen(false);
+      navigate('/app/scan-history');
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'The scan could not be started. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -160,10 +167,16 @@ export const ScanWizardModal: React.FC = () => {
         </div>
 
         {/* Notice */}
-        <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500 text-[11px] flex items-center gap-2">
-          <AlertTriangle size={15} className="shrink-0" />
-          <span>Demo mode active. Simulated telemetry will populate dashboard findings.</span>
-        </div>
+        {isDemoUser(currentUser) && (
+          <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500 text-[11px] flex items-center gap-2">
+            <AlertTriangle size={15} className="shrink-0" />
+            <span>Demo mode active. Simulated telemetry will populate dashboard findings.</span>
+          </div>
+        )}
+
+        {submitError && (
+          <p role="alert" className="text-xs text-red-600">{submitError}</p>
+        )}
 
         {/* Actions */}
         <div className="flex items-center justify-end gap-3 pt-2">

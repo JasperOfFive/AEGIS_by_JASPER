@@ -279,6 +279,7 @@ export const api = {
 
       return apiFetch<BackendScanRunResponse>('/scans', {
         method: 'POST',
+        signal: AbortSignal.timeout(90_000),
         body: JSON.stringify({
           brand_id: brandId,
           requested_source_types: uniqueSources
