@@ -107,6 +107,11 @@ export function RadialGlowButton({
         .rg-label {
           position: relative;
           z-index: 1;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          white-space: nowrap;
         }
 
         .rg-bg {
