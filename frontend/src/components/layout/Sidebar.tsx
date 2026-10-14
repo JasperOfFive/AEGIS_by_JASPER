@@ -26,7 +26,7 @@ const NAV_ROUTES = [
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({ onCloseMobile, onToggleCollapse }) => {
-  const { theme } = useAegis();
+  const { theme, currentUser } = useAegis();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -243,10 +243,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ onCloseMobile, onToggleCollaps
                 borderColor: 'var(--primary-accent)'
               }}
             >
-              AC
+              {(currentUser?.name || 'User')
+                .split(/\s+/)
+                .slice(0, 2)
+                .map(part => part[0]?.toUpperCase() || '')
+                .join('') || 'U'}
             </div>
             <div className="flex flex-col text-left">
-              <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>Alex Carter</span>
+              <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{currentUser?.name || 'User'}</span>
               <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Security Analyst</span>
             </div>
           </div>

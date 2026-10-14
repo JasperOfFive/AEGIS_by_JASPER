@@ -18,10 +18,16 @@ export const Topbar: React.FC<TopbarProps> = ({
   isSidebarCollapsed = false,
   onToggleSidebar
 }) => {
-  const { theme, toggleTheme, searchQuery, setSearchQuery, findings, brands } = useAegis();
+  const { theme, toggleTheme, searchQuery, setSearchQuery, findings, brands, currentUser } = useAegis();
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const navigate = useNavigate();
+  const displayName = currentUser?.name?.trim() || 'User';
+  const userInitials = displayName
+    .split(/\s+/)
+    .slice(0, 2)
+    .map(part => part[0]?.toUpperCase() || '')
+    .join('') || 'U';
 
   const filteredFindings = searchQuery.trim()
     ? findings.filter(
@@ -225,9 +231,9 @@ export const Topbar: React.FC<TopbarProps> = ({
             className="w-6 h-6 rounded-full font-bold text-[10px] flex items-center justify-center text-white"
             style={{ backgroundColor: 'var(--primary-accent)' }}
           >
-            AC
+            {userInitials}
           </div>
-          <span className="text-xs font-medium hidden sm:inline" style={{ color: 'var(--text-primary)' }}>Alex</span>
+          <span className="text-xs font-medium hidden sm:inline" style={{ color: 'var(--text-primary)' }}>{displayName.split(/\s+/)[0]}</span>
         </button>
       </div>
 
