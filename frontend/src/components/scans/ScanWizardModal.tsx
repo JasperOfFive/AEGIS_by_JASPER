@@ -125,17 +125,15 @@ export const ScanWizardModal: React.FC = () => {
                 : 'Create a brand profile first. Scans need a brand to know what to monitor.'}
             </p>
             {!isLoadingBrands && (
-              <button
-                type="button"
+              <RadialGlowButton
                 onClick={() => {
                   setIsScanWizardOpen(false);
                   navigate('/app/brands');
                 }}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-white"
-                style={{ backgroundColor: 'var(--primary-accent)' }}
+                className="!min-w-0 !min-h-[38px] !text-xs !py-2 !px-4"
               >
-                Create Brand Profile
-              </button>
+                Create Brand Profile →
+              </RadialGlowButton>
             )}
           </div>
         ) : (
