@@ -125,6 +125,18 @@ body {
   border-color: var(--border-color);
 }
 
+/* Keep the radial gradient animation when theme-specific button colors are applied. */
+:root .rg-button {
+  --transition: 0.75s;
+  transition:
+    --rg-pos-x .75s, --rg-pos-y .75s,
+    --rg-spread-x .75s, --rg-spread-y .75s,
+    --rg-color-1 .75s, --rg-color-2 .75s, --rg-color-3 .75s, --rg-color-4 .75s, --rg-color-5 .75s,
+    --rg-border-angle .75s, --rg-border-color-1 .75s, --rg-border-color-2 .75s,
+    --rg-stop-1 .75s, --rg-stop-2 .75s, --rg-stop-3 .75s, --rg-stop-4 .75s, --rg-stop-5 .75s,
+    transform 0.22s var(--ease-out-smooth), box-shadow 0.25s var(--ease-out-smooth), filter 0.22s ease;
+}
+
 /* Theme-adaptive Radial Glow Button (Bluish/Blackish in Dark Mode, Orangish/Brownish in Light Mode) */
 :root:not(.light) .rg-button {
   --rg-color-1: #0A1120;
@@ -135,7 +147,6 @@ body {
   --rg-border-color-1: rgba(56, 189, 248, 0.85);
   --rg-border-color-2: rgba(56, 189, 248, 0.25);
   box-shadow: 0 4px 20px -2px rgba(56, 189, 248, 0.25), 0 0 0 1px rgba(56, 189, 248, 0.35);
-  transition: transform 0.22s var(--ease-out-smooth), box-shadow 0.25s var(--ease-out-smooth), filter 0.22s ease;
 }
 
 :root:not(.light) .rg-button:hover {
@@ -157,7 +168,6 @@ html.light .rg-button {
   --rg-border-color-1: rgba(255, 141, 92, 0.85);
   --rg-border-color-2: rgba(255, 141, 92, 0.35);
   box-shadow: 0 4px 20px -2px rgba(255, 141, 92, 0.25), 0 0 0 1px rgba(255, 141, 92, 0.35);
-  transition: transform 0.22s var(--ease-out-smooth), box-shadow 0.25s var(--ease-out-smooth), filter 0.22s ease;
 }
 
 html.light .rg-button:hover {
