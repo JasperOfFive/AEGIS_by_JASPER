@@ -11,8 +11,11 @@ from app.core.logging import logger
 
 class SchedulerService:
     @staticmethod
-    def get_schedule(db: Session, brand_id: str) -> dict:
-        brand = db.scalar(select(Brand).where(Brand.id == brand_id))
+    def get_schedule(db: Session, brand_id: str, owner_id: str | None = None) -> dict:
+        query = select(Brand).where(Brand.id == brand_id)
+        if owner_id:
+            query = query.where(Brand.owner_id == owner_id)
+        brand = db.scalar(query)
         if not brand:
             raise EntityNotFoundError(f"Brand '{brand_id}' not found.")
 
@@ -32,9 +35,13 @@ class SchedulerService:
         db: Session,
         brand_id: str,
         enabled: bool,
-        interval_hours: int
+        interval_hours: int,
+        owner_id: str | None = None
     ) -> dict:
-        brand = db.scalar(select(Brand).where(Brand.id == brand_id))
+        query = select(Brand).where(Brand.id == brand_id)
+        if owner_id:
+            query = query.where(Brand.owner_id == owner_id)
+        brand = db.scalar(query)
         if not brand:
             raise EntityNotFoundError(f"Brand '{brand_id}' not found.")
 

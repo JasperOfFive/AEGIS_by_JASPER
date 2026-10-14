@@ -36,6 +36,15 @@ function getAuthHeaders(): HeadersInit {
   };
 }
 
+function getReviewerName(): string {
+  try {
+    const user = JSON.parse(localStorage.getItem('aegis-current-user') || 'null');
+    return typeof user?.name === 'string' && user.name.trim() ? user.name.trim() : 'AEGIS Analyst';
+  } catch {
+    return 'AEGIS Analyst';
+  }
+}
+
 /**
  * Robust JSON fetch wrapper connecting to FastAPI backend
  */
@@ -76,25 +85,28 @@ async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise
 export const api = {
   // Authentication Endpoints
   auth: {
-    async login(email: string, _password?: string) {
-      const user = {
-        name: email.split('@')[0] || 'Security Analyst',
-        email
-      };
-      localStorage.setItem('aegis-current-user', JSON.stringify(user));
-      localStorage.setItem('aegis-auth-token', 'aegis-session-active');
-      return { data: { user, token: 'aegis-session-active' }, error: null, isMock: false };
+    async login(email: string, password?: string) {
+      const result = await apiFetch<{ user: { id: string; name: string; email: string; organization: string; is_demo: boolean }; token: string }>('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password })
+      });
+      if (result.data) {
+        localStorage.setItem('aegis-current-user', JSON.stringify(result.data.user));
+        localStorage.setItem('aegis-auth-token', result.data.token);
+      }
+      return result;
     },
 
     async register(payload: { name: string; email: string; password?: string; organization?: string }) {
-      const user = {
-        name: payload.name || payload.email.split('@')[0],
-        email: payload.email,
-        organization: payload.organization || 'AEGIS Security'
-      };
-      localStorage.setItem('aegis-current-user', JSON.stringify(user));
-      localStorage.setItem('aegis-auth-token', 'aegis-session-active');
-      return { data: { user, token: 'aegis-session-active' }, error: null, isMock: false };
+      const result = await apiFetch<{ user: { id: string; name: string; email: string; organization: string; is_demo: boolean }; token: string }>('/auth/register', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      if (result.data) {
+        localStorage.setItem('aegis-current-user', JSON.stringify(result.data.user));
+        localStorage.setItem('aegis-auth-token', result.data.token);
+      }
+      return result;
     },
 
     async logout() {
@@ -105,9 +117,9 @@ export const api = {
     },
 
     async getCurrentUser() {
-      const saved = localStorage.getItem('aegis-current-user');
-      const user = saved ? JSON.parse(saved) : null;
-      return { data: user, error: null, isMock: false };
+      const result = await apiFetch<{ id: string; name: string; email: string; organization: string; is_demo: boolean }>('/auth/me');
+      if (result.data) localStorage.setItem('aegis-current-user', JSON.stringify(result.data));
+      return result;
     }
   },
 
@@ -173,13 +185,21 @@ export const api = {
 
   // Findings & Detections Endpoints (FastAPI /api/v1/findings)
   findings: {
-    async getAll(brandMap: Record<string, BackendBrandResponse> = {}): Promise<{ data: Finding[] | null; error: Error | null; isMock: boolean }> {
-      const res = await apiFetch<{ items: BackendFindingResponse[]; total: number }>('/findings?page=1&page_size=100');
-      if (res.data && res.data.items) {
-        const mapped = res.data.items.map(f => backendFindingToFrontend(f, brandMap));
-        return { data: mapped, error: null, isMock: false };
+    async getAll(brandMap: Record<string, BackendBrandResponse> = {}, brandIds?: string[]): Promise<{ data: Finding[] | null; error: Error | null; isMock: boolean }> {
+      if (brandIds && brandIds.length === 0) {
+        return { data: [], error: null, isMock: false };
       }
-      return { data: null, error: res.error, isMock: true };
+
+      const queries = brandIds?.length
+        ? await Promise.all(brandIds.map(brandId =>
+            apiFetch<{ items: BackendFindingResponse[]; total: number }>(`/findings?brand_id=${encodeURIComponent(brandId)}&page=1&page_size=100`)
+          ))
+        : [await apiFetch<{ items: BackendFindingResponse[]; total: number }>('/findings?page=1&page_size=100')];
+      const failed = queries.find(result => result.error);
+      if (failed?.error) return { data: null, error: failed.error, isMock: true };
+
+      const findings = queries.flatMap(result => result.data?.items || []);
+      return { data: findings.map(f => backendFindingToFrontend(f, brandMap)), error: null, isMock: false };
     },
 
     async getById(id: string, brandMap: Record<string, BackendBrandResponse> = {}): Promise<{ data: Finding | null; error: Error | null; isMock: boolean }> {
@@ -202,7 +222,7 @@ export const api = {
 
       const payload = {
         new_status: backendStatusMap[status] || status,
-        reviewer: 'Alex Carter',
+        reviewer: getReviewerName(),
         comment: comment || `Finding status updated to ${status} via analyst triage.`
       };
 
@@ -220,7 +240,7 @@ export const api = {
     async addNote(id: string, note: string): Promise<{ data: Finding | null; error: Error | null; isMock: boolean }> {
       const payload = {
         new_status: 'under_review',
-        reviewer: 'Alex Carter',
+        reviewer: getReviewerName(),
         comment: note
       };
       const res = await apiFetch<any>(`/findings/${id}/reviews`, {

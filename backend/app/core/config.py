@@ -79,6 +79,7 @@ class Settings(BaseSettings):
     # Administrative & Security Protections
     AEGIS_ADMIN_TOKEN: str = "aegis-confirmed-demo-reset"
     ALLOW_DEMO_RESET: bool = False
+    AUTH_SECRET_KEY: str = ""
     
     # Detection Scoring Weights (Social)
     WEIGHT_SOCIAL_NAME: float = 25.0

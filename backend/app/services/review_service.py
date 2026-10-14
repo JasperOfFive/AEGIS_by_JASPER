@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 from app.models.review import Review
 from app.models.finding import Finding
+from app.models.brand import Brand
 from app.schemas.review import ReviewCreate
 from app.core.errors import EntityNotFoundError, bad_request_exception
 
@@ -23,9 +24,13 @@ class ReviewService:
     def add_review(
         db: Session,
         finding_id: str,
-        data: ReviewCreate
+        data: ReviewCreate,
+        owner_id: str | None = None,
     ) -> Review:
-        finding = db.scalar(select(Finding).where(Finding.id == finding_id))
+        query = select(Finding).where(Finding.id == finding_id)
+        if owner_id:
+            query = query.join(Brand, Finding.brand_id == Brand.id).where(Brand.owner_id == owner_id)
+        finding = db.scalar(query)
         if not finding:
             raise EntityNotFoundError(f"Finding '{finding_id}' not found.")
 
@@ -58,7 +63,13 @@ class ReviewService:
         return review
 
     @staticmethod
-    def get_history(db: Session, finding_id: str) -> List[Review]:
+    def get_history(db: Session, finding_id: str, owner_id: str | None = None) -> List[Review]:
+        query = select(Finding.id).where(Finding.id == finding_id)
+        if owner_id:
+            query = query.join(Brand, Finding.brand_id == Brand.id).where(Brand.owner_id == owner_id)
+        finding = db.scalar(query)
+        if not finding:
+            raise EntityNotFoundError(f"Finding '{finding_id}' not found.")
         return db.scalars(
             select(Review).where(Review.finding_id == finding_id).order_by(Review.created_at.desc())
         ).all()

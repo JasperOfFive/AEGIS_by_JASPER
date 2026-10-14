@@ -11,23 +11,27 @@ from app.schemas.brand import BrandCreate
 from app.schemas.asset import BrandAssetCreate
 from app.schemas.scan import ScanTriggerRequest
 from app.core.logging import logger
+from app.models.user import User
+from app.security.auth import get_current_user
 
 router = APIRouter(prefix="/demo", tags=["Demo & Fixtures"])
 
 
 @router.post("/seed")
-def seed_demo_data(db: Session = Depends(get_db)):
+def seed_demo_data(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Seed prototype with Acme Finance and trigger an automated baseline scan."""
     from app.core.config import settings
     from app.core.errors import bad_request_exception
 
     if not settings.ALLOW_DEMO_RESET:
         raise bad_request_exception("Demo seeding is disabled in production environment. Enable ALLOW_DEMO_RESET explicitly if required.")
+    if not user.is_demo:
+        raise bad_request_exception("Only the Alex demo profile can seed demo records.")
 
     logger.info("Seeding demo data...")
 
     # Check if Acme already exists
-    existing = db.scalar(select(Brand).where(Brand.name == "Acme Finance Group"))
+    existing = db.scalar(select(Brand).where(Brand.name == "Acme Finance Group", Brand.owner_id == user.id))
     if not existing:
         brand = BrandService.create(
             db,
@@ -37,7 +41,8 @@ def seed_demo_data(db: Session = Depends(get_db)):
                 industry="Financial Services & Banking",
                 primary_website="https://acmefinance.com",
                 is_active=True
-            )
+            ),
+            owner_id=user.id
         )
 
         # Register official assets
@@ -98,6 +103,7 @@ def seed_demo_data(db: Session = Depends(get_db)):
             brand_id=brand.id,
             requested_source_types=["social", "app_store", "domain", "threat_intel"]
         ),
+        owner_id=user.id,
         run_synchronous=True
     )
 
@@ -115,7 +121,8 @@ def seed_demo_data(db: Session = Depends(get_db)):
 @router.post("/reset")
 def reset_database(
     x_aegis_admin_token: Optional[str] = Header(None, alias="x-aegis-admin-token"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """
     Reset all findings, candidates, scans, and brands for a fresh demonstration.
@@ -127,17 +134,12 @@ def reset_database(
 
     if not settings.ALLOW_DEMO_RESET:
         raise bad_request_exception("Database reset is disabled in current environment.")
+    if not user.is_demo:
+        raise bad_request_exception("Only the Alex demo profile can reset demo records.")
 
     if not x_aegis_admin_token or not secrets.compare_digest(x_aegis_admin_token, settings.AEGIS_ADMIN_TOKEN):
         raise bad_request_exception("Unauthorized reset attempt. Valid 'x-aegis-admin-token' header required.")
 
-    db.execute(delete(Review))
-    db.execute(delete(Finding))
-    db.execute(delete(CandidateObservation))
-    db.execute(delete(Candidate))
-    db.execute(delete(ScanSourceResult))
-    db.execute(delete(ScanRun))
-    db.execute(delete(BrandAsset))
-    db.execute(delete(Brand))
+    db.execute(delete(Brand).where(Brand.owner_id == user.id))
     db.commit()
     return {"success": True, "message": "Database reset completed successfully."}

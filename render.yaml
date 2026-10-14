@@ -21,6 +21,8 @@ services:
       # For Managed PostgreSQL: postgresql://user:password@host/dbname
       - key: DATABASE_URL
         sync: false
+      - key: AUTH_SECRET_KEY
+        generateValue: true
       - key: GEMINI_API_KEY
         sync: false
       - key: OPENAI_API_KEY

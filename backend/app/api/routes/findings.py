@@ -5,6 +5,8 @@ from app.db.session import get_db
 from app.services.finding_service import FindingService
 from app.schemas.finding import FindingResponse, FindingFilterParams
 from app.schemas.ai import AIExplanationResponse
+from app.models.user import User
+from app.security.auth import get_current_user
 from app.schemas.common import PaginatedResponse
 
 router = APIRouter(prefix="/findings", tags=["Findings"])
@@ -22,7 +24,8 @@ def list_findings(
     max_score: Optional[float] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     params = FindingFilterParams(
         brand_id=brand_id,
@@ -36,7 +39,7 @@ def list_findings(
     )
 
     skip = (page - 1) * page_size
-    items, total = FindingService.list_findings(db, params, skip=skip, limit=page_size)
+    items, total = FindingService.list_findings(db, params, owner_id=user.id, skip=skip, limit=page_size)
 
     total_pages = (total + page_size - 1) // page_size if total > 0 else 1
 
@@ -50,8 +53,8 @@ def list_findings(
 
 
 @router.get("/{finding_id}", response_model=FindingResponse)
-def get_finding(finding_id: str, db: Session = Depends(get_db)):
-    finding = FindingService.get_by_id(db, finding_id)
+def get_finding(finding_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    finding = FindingService.get_by_id(db, finding_id, user.id)
     return FindingResponse.model_validate(finding)
 
 
@@ -59,7 +62,9 @@ def get_finding(finding_id: str, db: Session = Depends(get_db)):
 def explain_finding(
     finding_id: str,
     force_refresh: bool = Query(False, description="Bypass cache and regenerate explanation"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     from app.services.explanation_service import ExplanationService
+    FindingService.get_by_id(db, finding_id, user.id)
     return ExplanationService.explain_finding(db, finding_id, force_refresh=force_refresh)

@@ -5,6 +5,7 @@ from sqlalchemy import select, and_, func
 from app.models.finding import Finding
 from app.models.candidate import Candidate
 from app.models.review import Review
+from app.models.brand import Brand
 from app.schemas.finding import FindingFilterParams
 from app.detection.engine import DetectionResult
 from app.core.errors import EntityNotFoundError
@@ -75,9 +76,12 @@ class FindingService:
         return finding
 
     @staticmethod
-    def get_by_id(db: Session, finding_id: str) -> Finding:
+    def get_by_id(db: Session, finding_id: str, owner_id: str | None = None) -> Finding:
+        query = select(Finding)
+        if owner_id:
+            query = query.join(Brand, Finding.brand_id == Brand.id).where(Brand.owner_id == owner_id)
         finding = db.scalar(
-            select(Finding)
+            query
             .options(
                 joinedload(Finding.candidate),
                 joinedload(Finding.reviews),
@@ -93,12 +97,15 @@ class FindingService:
     def list_findings(
         db: Session,
         params: FindingFilterParams,
+        owner_id: str | None = None,
         skip: int = 0,
         limit: int = 50
     ) -> Tuple[List[Finding], int]:
         query = select(Finding).join(Candidate, Finding.candidate_id == Candidate.id)
 
-        conditions = []
+        conditions = [Brand.owner_id == owner_id] if owner_id else []
+        if owner_id:
+            query = query.join(Brand, Finding.brand_id == Brand.id)
         if params.brand_id:
             conditions.append(Finding.brand_id == params.brand_id)
         if params.risk_level:
@@ -121,6 +128,8 @@ class FindingService:
 
         # Count total
         count_query = select(func.count(Finding.id)).join(Candidate, Finding.candidate_id == Candidate.id)
+        if owner_id:
+            count_query = count_query.join(Brand, Finding.brand_id == Brand.id)
         if conditions:
             count_query = count_query.where(and_(*conditions))
         total = db.scalar(count_query) or 0

@@ -222,7 +222,7 @@ export function backendFindingToFrontend(
     assignedAnalyst:
       f.reviews && f.reviews.length > 0
         ? f.reviews[f.reviews.length - 1].reviewer
-        : 'Alex Carter',
+        : 'AEGIS Analyst',
     raw: f,
   };
 }
@@ -272,6 +272,7 @@ export function backendScanToFrontend(
   if (s.status === 'running') status = 'running';
   else if (s.status === 'failed') status = 'failed';
   else if (s.status === 'queued') status = 'queued';
+  else if (s.status === 'partially_completed') status = 'partially_completed';
 
   const progress =
     s.progress_percent !== undefined

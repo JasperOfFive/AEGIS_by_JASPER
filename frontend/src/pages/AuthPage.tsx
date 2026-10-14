@@ -24,28 +24,6 @@ interface AuthPageProps {
   initialMode?: 'login' | 'signup';
 }
 
-interface UserAccount {
-  name: string;
-  email: string;
-  password: string;
-  organization?: string;
-}
-
-const DEFAULT_ACCOUNTS: UserAccount[] = [
-  {
-    name: 'Alex Carter',
-    email: 'alex@aegis.security',
-    password: 'password123',
-    organization: 'Acme SecOps'
-  },
-  {
-    name: 'Security Admin',
-    email: 'admin@aegis.com',
-    password: 'admin123',
-    organization: 'AEGIS SOC'
-  }
-];
-
 export const AuthPage: React.FC<AuthPageProps> = ({ initialMode = 'login' }) => {
   const { theme, toggleTheme, setCurrentUser } = useAegis();
   const navigate = useNavigate();
@@ -89,21 +67,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialMode = 'login' }) => 
     }
   }, [location.pathname]);
 
-  // Retrieve stored registered accounts or initialize with defaults
-  const getRegisteredAccounts = (): UserAccount[] => {
-    try {
-      const stored = localStorage.getItem('aegis-registered-users');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {
-      // ignore
-    }
-    localStorage.setItem('aegis-registered-users', JSON.stringify(DEFAULT_ACCOUNTS));
-    return DEFAULT_ACCOUNTS;
-  };
-
   // Quick fill demo credentials
   const handleQuickDemoFill = () => {
     setLoginEmail('alex@aegis.security');
@@ -142,29 +105,9 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialMode = 'login' }) => 
       }, 850);
       return;
     }
-
-    // Graceful offline/mock demo account fallback
-    setTimeout(() => {
-      const accounts = getRegisteredAccounts();
-      const matched = accounts.find(
-        acc => acc.email.toLowerCase() === emailTrimmed && acc.password === passTrimmed
-      );
-
-      if (matched) {
-        // SUCCESS: Right animation
-        setAuthStatus('success');
-        setSuccessMessage(`Access Granted. Welcome back, ${matched.name}!`);
-        setCurrentUser({ name: matched.name, email: matched.email });
-        setTimeout(() => {
-          navigate('/app');
-        }, 850);
-      } else {
-        // FAILURE: Wrong animation (Shake + Red glow + error message)
-        setAuthStatus('error');
-        setErrorMessage('Invalid credentials. The email or password entered does not match our records.');
-        setShakeKey(prev => prev + 1);
-      }
-    }, 300);
+    setAuthStatus('error');
+    setErrorMessage(backendRes.error?.message || 'Could not reach the account service. Please try again.');
+    setShakeKey(prev => prev + 1);
   };
 
   // Handle Signup submission
@@ -193,9 +136,9 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialMode = 'login' }) => 
       return;
     }
 
-    if (passTrimmed.length < 6) {
+    if (passTrimmed.length < 8) {
       setAuthStatus('error');
-      setErrorMessage('Password must be at least 6 characters long.');
+      setErrorMessage('Password must be at least 8 characters long.');
       setShakeKey(prev => prev + 1);
       return;
     }
@@ -235,35 +178,9 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialMode = 'login' }) => 
       }, 900);
       return;
     }
-
-    // Graceful offline/mock demo account fallback
-    setTimeout(() => {
-      const accounts = getRegisteredAccounts();
-      if (accounts.some(acc => acc.email.toLowerCase() === emailTrimmed)) {
-        setAuthStatus('error');
-        setErrorMessage('An account with this email already exists. Please log in instead.');
-        setShakeKey(prev => prev + 1);
-        return;
-      }
-
-      // Save user
-      const newAcc: UserAccount = {
-        name: nameTrimmed,
-        email: emailTrimmed,
-        password: passTrimmed,
-        organization: signupOrg.trim() || 'Enterprise SecOps'
-      };
-      const updated = [newAcc, ...accounts];
-      localStorage.setItem('aegis-registered-users', JSON.stringify(updated));
-
-      // SUCCESS: Right animation
-      setAuthStatus('success');
-      setSuccessMessage(`Account created successfully! Welcome to AEGIS, ${nameTrimmed}.`);
-      setCurrentUser({ name: nameTrimmed, email: emailTrimmed });
-      setTimeout(() => {
-        navigate('/app');
-      }, 900);
-    }, 300);
+    setAuthStatus('error');
+    setErrorMessage(backendRes.error?.message || 'Could not create the account. Please try again.');
+    setShakeKey(prev => prev + 1);
   };
 
   return (

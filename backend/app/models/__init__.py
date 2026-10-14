@@ -4,6 +4,7 @@ from app.models.scan import ScanRun, ScanSourceResult
 from app.models.candidate import Candidate, CandidateObservation
 from app.models.finding import Finding
 from app.models.review import Review
+from app.models.user import User
 
 __all__ = [
     "Brand",
@@ -14,4 +15,5 @@ __all__ = [
     "CandidateObservation",
     "Finding",
     "Review",
+    "User",
 ]

@@ -16,9 +16,13 @@ class ScanService:
     def trigger_scan(
         db: Session,
         req: ScanTriggerRequest,
+        owner_id: str | None = None,
         run_synchronous: bool = False
     ) -> ScanRun:
-        brand = db.scalar(select(Brand).where(Brand.id == req.brand_id))
+        brand_query = select(Brand).where(Brand.id == req.brand_id)
+        if owner_id:
+            brand_query = brand_query.where(Brand.owner_id == owner_id)
+        brand = db.scalar(brand_query)
         if not brand:
             raise EntityNotFoundError(f"Brand '{req.brand_id}' not found.")
 
@@ -57,8 +61,8 @@ class ScanService:
         return scan
 
     @staticmethod
-    def get_status(db: Session, scan_id: str) -> dict:
-        scan = ScanService.get_by_id(db, scan_id)
+    def get_status(db: Session, scan_id: str, owner_id: str | None = None) -> dict:
+        scan = ScanService.get_by_id(db, scan_id, owner_id)
         is_terminal = scan.status in ("completed", "partially_completed", "failed")
         return {
             "id": scan.id,
@@ -75,9 +79,12 @@ class ScanService:
         }
 
     @staticmethod
-    def get_by_id(db: Session, scan_id: str) -> ScanRun:
+    def get_by_id(db: Session, scan_id: str, owner_id: str | None = None) -> ScanRun:
+        query = select(ScanRun)
+        if owner_id:
+            query = query.join(Brand, ScanRun.brand_id == Brand.id).where(Brand.owner_id == owner_id)
         scan = db.scalar(
-            select(ScanRun)
+            query
             .options(joinedload(ScanRun.source_results), joinedload(ScanRun.brand))
             .where(ScanRun.id == scan_id)
         )
@@ -86,18 +93,23 @@ class ScanService:
         return scan
 
     @staticmethod
-    def list_by_brand(db: Session, brand_id: str) -> List[ScanRun]:
+    def list_by_brand(db: Session, brand_id: str, owner_id: str | None = None) -> List[ScanRun]:
+        query = select(ScanRun).where(ScanRun.brand_id == brand_id)
+        if owner_id:
+            query = query.join(Brand, ScanRun.brand_id == Brand.id).where(Brand.owner_id == owner_id)
         return db.scalars(
-            select(ScanRun)
+            query
             .options(joinedload(ScanRun.source_results), joinedload(ScanRun.brand))
-            .where(ScanRun.brand_id == brand_id)
             .order_by(ScanRun.created_at.desc())
         ).unique().all()
 
     @staticmethod
-    def list_all(db: Session, limit: int = 50) -> List[ScanRun]:
+    def list_all(db: Session, owner_id: str | None = None, limit: int = 50) -> List[ScanRun]:
+        query = select(ScanRun)
+        if owner_id:
+            query = query.join(Brand, ScanRun.brand_id == Brand.id).where(Brand.owner_id == owner_id)
         return db.scalars(
-            select(ScanRun)
+            query
             .options(joinedload(ScanRun.source_results), joinedload(ScanRun.brand))
             .order_by(ScanRun.created_at.desc())
             .limit(limit)

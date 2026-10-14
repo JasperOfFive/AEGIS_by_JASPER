@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { Finding, Brand, Scan, FindingStatus } from '../types';
 import { INITIAL_BRANDS, INITIAL_FINDINGS, INITIAL_SCANS } from '../data/mockData';
 import { api } from '../services/apiService';
@@ -32,9 +32,29 @@ interface AegisContextType {
 const AegisContext = createContext<AegisContextType | undefined>(undefined);
 
 export const isDemoUser = (user: { email?: string } | null | undefined): boolean => {
-  if (!user || !user.email) return true;
+  if (!user || !user.email) return false;
   const email = user.email.toLowerCase().trim();
-  return email === 'alex@aegis.security' || email === 'admin@aegis.com';
+  return email === 'alex@aegis.security';
+};
+
+const readStoredScans = (...keys: string[]): Scan[] | null => {
+  for (const key of keys) {
+    const saved = localStorage.getItem(key);
+    if (!saved) continue;
+    try {
+      const parsed: unknown = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        // Older frontend releases created timestamp-only local placeholders when the API rejected a scan.
+        // Drop those orphaned entries so they cannot remain "running" after an upgrade.
+        return (parsed as Scan[]).filter(scan =>
+          !(scan.status === 'running' && /^scan-\d{13}$/.test(scan.id))
+        );
+      }
+    } catch {
+      // Ignore malformed local scan cache and try the next key.
+    }
+  }
+  return null;
 };
 
 export const AegisProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -53,34 +73,46 @@ export const AegisProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [brands, setBrands] = useState<Brand[]>(() => {
     const userSaved = localStorage.getItem('aegis-current-user');
     const user = userSaved ? JSON.parse(userSaved) : null;
+    if (user && isDemoUser(user)) {
+      const saved = localStorage.getItem('aegis-brands-demo');
+      return saved ? JSON.parse(saved) : INITIAL_BRANDS;
+    }
     if (user && !isDemoUser(user)) {
       const saved = localStorage.getItem(`aegis-brands-${user.email.toLowerCase().trim()}`);
       return saved ? JSON.parse(saved) : [];
     }
-    const saved = localStorage.getItem('aegis-brands-demo') || localStorage.getItem('aegis-brands');
-    return saved ? JSON.parse(saved) : INITIAL_BRANDS;
+    return [];
   });
+  const brandsRef = useRef(brands);
+
+  useEffect(() => {
+    brandsRef.current = brands;
+  }, [brands]);
 
   const [findings, setFindings] = useState<Finding[]>(() => {
     const userSaved = localStorage.getItem('aegis-current-user');
     const user = userSaved ? JSON.parse(userSaved) : null;
+    if (user && isDemoUser(user)) {
+      const saved = localStorage.getItem('aegis-findings-demo');
+      return saved ? JSON.parse(saved) : INITIAL_FINDINGS;
+    }
     if (user && !isDemoUser(user)) {
       const saved = localStorage.getItem(`aegis-findings-${user.email.toLowerCase().trim()}`);
       return saved ? JSON.parse(saved) : [];
     }
-    const saved = localStorage.getItem('aegis-findings-demo') || localStorage.getItem('aegis-findings');
-    return saved ? JSON.parse(saved) : INITIAL_FINDINGS;
+    return [];
   });
 
   const [scans, setScans] = useState<Scan[]>(() => {
     const userSaved = localStorage.getItem('aegis-current-user');
     const user = userSaved ? JSON.parse(userSaved) : null;
-    if (user && !isDemoUser(user)) {
-      const saved = localStorage.getItem(`aegis-scans-${user.email.toLowerCase().trim()}`);
-      return saved ? JSON.parse(saved) : [];
+    if (user && isDemoUser(user)) {
+      return readStoredScans('aegis-scans-demo') ?? INITIAL_SCANS;
     }
-    const saved = localStorage.getItem('aegis-scans-demo') || localStorage.getItem('aegis-scans');
-    return saved ? JSON.parse(saved) : INITIAL_SCANS;
+    if (user && !isDemoUser(user)) {
+      return readStoredScans(`aegis-scans-${user.email.toLowerCase().trim()}`) ?? [];
+    }
+    return [];
   });
 
   const handleSetCurrentUser = (user: { name: string; email: string } | null) => {
@@ -88,27 +120,33 @@ export const AegisProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (user) {
       localStorage.setItem('aegis-current-user', JSON.stringify(user));
       localStorage.setItem('aegis-authenticated', 'true');
+      localStorage.removeItem('aegis-brands');
+      localStorage.removeItem('aegis-findings');
+      localStorage.removeItem('aegis-scans');
       if (isDemoUser(user)) {
-        const savedBrands = localStorage.getItem('aegis-brands-demo') || localStorage.getItem('aegis-brands');
-        const savedFindings = localStorage.getItem('aegis-findings-demo') || localStorage.getItem('aegis-findings');
-        const savedScans = localStorage.getItem('aegis-scans-demo') || localStorage.getItem('aegis-scans');
+        const savedBrands = localStorage.getItem('aegis-brands-demo');
+        const savedFindings = localStorage.getItem('aegis-findings-demo');
+        const savedScans = readStoredScans('aegis-scans-demo');
         setBrands(savedBrands ? JSON.parse(savedBrands) : INITIAL_BRANDS);
         setFindings(savedFindings ? JSON.parse(savedFindings) : INITIAL_FINDINGS);
-        setScans(savedScans ? JSON.parse(savedScans) : INITIAL_SCANS);
+        setScans(savedScans ?? INITIAL_SCANS);
       } else {
         // New user profile: no mock data present!
         const userKey = user.email.toLowerCase().trim();
         const savedBrands = localStorage.getItem(`aegis-brands-${userKey}`);
         const savedFindings = localStorage.getItem(`aegis-findings-${userKey}`);
-        const savedScans = localStorage.getItem(`aegis-scans-${userKey}`);
+        const savedScans = readStoredScans(`aegis-scans-${userKey}`);
         setBrands(savedBrands ? JSON.parse(savedBrands) : []);
         setFindings(savedFindings ? JSON.parse(savedFindings) : []);
-        setScans(savedScans ? JSON.parse(savedScans) : []);
+        setScans(savedScans ?? []);
       }
     } else {
       localStorage.removeItem('aegis-current-user');
       localStorage.removeItem('aegis-authenticated');
       localStorage.removeItem('aegis-auth-token');
+      setBrands([]);
+      setFindings([]);
+      setScans([]);
     }
   };
 
@@ -117,22 +155,36 @@ export const AegisProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     handleSetCurrentUser(null);
   };
 
+  useEffect(() => {
+    const savedUser = localStorage.getItem('aegis-current-user');
+    if (!savedUser) return;
+    if (!localStorage.getItem('aegis-auth-token')) {
+      handleSetCurrentUser(null);
+      return;
+    }
+    api.auth.getCurrentUser().then(result => {
+      if (result.data) handleSetCurrentUser(result.data);
+      else handleSetCurrentUser(null);
+    });
+  }, []);
+
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null);
   const [isScanWizardOpen, setIsScanWizardOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Reusable function to synchronize with real FastAPI backend
   const refreshData = useCallback(async () => {
-    // For newly created non-demo profiles, keep clean without global demo mock data
-    if (currentUser && !isDemoUser(currentUser)) {
-      return;
-    }
+    if (!currentUser) return;
+    const isPersonalUser = !isDemoUser(currentUser);
     try {
       const bRes = await api.brands.getAll();
       const brandMap: Record<string, any> = {};
-      if (bRes.data && Array.isArray(bRes.data) && bRes.data.length > 0) {
-        setBrands(bRes.data);
-        bRes.data.forEach((b: any) => {
+      if (bRes.data && Array.isArray(bRes.data)) {
+        // The backend returns only records owned by the authenticated account.
+        const visibleBrands = bRes.data;
+        if (isPersonalUser) setBrands(bRes.data);
+        else if (bRes.data.length > 0) setBrands(prev => [...bRes.data!, ...prev.filter(local => !bRes.data!.some(remote => remote.id === local.id))]);
+        visibleBrands.forEach((b: any) => {
           brandMap[b.id] = {
             id: b.id,
             name: b.name,
@@ -148,11 +200,13 @@ export const AegisProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         api.findings.getAll(brandMap),
         api.scans.getAll(brandMap)
       ]);
-      if (fRes.data && Array.isArray(fRes.data) && fRes.data.length > 0) {
-        setFindings(fRes.data);
+      if (fRes.data && Array.isArray(fRes.data)) {
+        if (isPersonalUser) setFindings(fRes.data);
+        else if (fRes.data.length > 0) setFindings(prev => [...fRes.data!, ...prev.filter(local => !fRes.data!.some(remote => remote.id === local.id))]);
       }
-      if (sRes.data && Array.isArray(sRes.data) && sRes.data.length > 0) {
-        setScans(sRes.data);
+      if (sRes.data && Array.isArray(sRes.data)) {
+        if (isPersonalUser) setScans(sRes.data);
+        else if (sRes.data.length > 0) setScans(prev => [...sRes.data!, ...prev.filter(local => !sRes.data!.some(remote => remote.id === local.id))]);
       }
     } catch (err) {
       console.warn('Backend sync warning:', err);
@@ -179,7 +233,6 @@ export const AegisProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!currentUser) return;
     if (isDemoUser(currentUser)) {
       localStorage.setItem('aegis-brands-demo', JSON.stringify(brands));
-      localStorage.setItem('aegis-brands', JSON.stringify(brands));
     } else {
       localStorage.setItem(`aegis-brands-${currentUser.email.toLowerCase().trim()}`, JSON.stringify(brands));
     }
@@ -189,7 +242,6 @@ export const AegisProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!currentUser) return;
     if (isDemoUser(currentUser)) {
       localStorage.setItem('aegis-findings-demo', JSON.stringify(findings));
-      localStorage.setItem('aegis-findings', JSON.stringify(findings));
     } else {
       localStorage.setItem(`aegis-findings-${currentUser.email.toLowerCase().trim()}`, JSON.stringify(findings));
     }
@@ -199,7 +251,6 @@ export const AegisProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!currentUser) return;
     if (isDemoUser(currentUser)) {
       localStorage.setItem('aegis-scans-demo', JSON.stringify(scans));
-      localStorage.setItem('aegis-scans', JSON.stringify(scans));
     } else {
       localStorage.setItem(`aegis-scans-${currentUser.email.toLowerCase().trim()}`, JSON.stringify(scans));
     }
@@ -268,31 +319,11 @@ export const AegisProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const addBrand = async (newB: Partial<Brand>) => {
-    try {
-      const res = await api.brands.create(newB);
-      if (res.data) {
-        setBrands(prev => [res.data!, ...prev]);
-        return;
-      }
-    } catch (err) {
-      console.warn('Failed to create brand on backend:', err);
+    const res = await api.brands.create(newB);
+    if (res.error || !res.data) {
+      throw new Error(res.error?.message || 'The backend did not save this brand. Check the backend service and try again.');
     }
-
-    const brand: Brand = {
-      id: `brand-${Date.now()}`,
-      name: newB.name || 'New Monitored Brand',
-      domain: newB.domain || 'example.com',
-      logo: (newB.name || 'B').charAt(0).toUpperCase(),
-      status: 'active',
-      monitoredAssets: 12,
-      riskScore: 35,
-      lastScanTime: 'Just now',
-      activeFindingsCount: 1,
-      description: newB.description || 'Newly monitored organizational brand asset.',
-      socialHandles: newB.socialHandles || [],
-      protectedKeywords: newB.protectedKeywords || [newB.name?.toLowerCase() || 'asset']
-    };
-    setBrands(prev => [brand, ...prev]);
+    setBrands(prev => [res.data!, ...prev.filter(brand => brand.id !== res.data!.id)]);
   };
 
   const deleteBrand = async (id: string) => {
@@ -319,15 +350,21 @@ export const AegisProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const runNewScan = async (brandId: string, targets: string[], scanType: string) => {
     const brand = brands.find(b => b.id === brandId);
-    const brandName = brand?.name || 'Target Brand';
+    if (!brand) {
+      throw new Error('The selected brand is not available. Refresh your brand list and try again.');
+    }
 
     const res = await api.scans.run(brandId, targets, scanType);
-    const scanId = res.data?.id || `scan-${Date.now()}`;
+    if (res.error || !res.data?.id) {
+      throw new Error(res.error?.message || 'The backend did not create a scan. Check the backend service and try again.');
+    }
+
+    const scanId = res.data.id;
 
     const newScan: Scan = {
       id: scanId,
-      brandName,
-      brandId: brand ? brand.id : brandId,
+      brandName: brand.name,
+      brandId: brand.id,
       status: 'running',
       progress: 25,
       findingsCount: 0,
@@ -341,7 +378,7 @@ export const AegisProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setScans(prev => [newScan, ...prev.filter(s => s.id !== scanId)]);
 
     // Poll real backend scan status
-    if (res.data?.id) {
+    {
       let attempts = 0;
       const maxAttempts = 30;
       const pollInterval = setInterval(async () => {
@@ -357,7 +394,9 @@ export const AegisProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 if (item.id === scanId) {
                   return {
                     ...item,
-                    status: s.status === 'failed' ? 'failed' : (s.status === 'completed' ? 'completed' : 'running'),
+                    status: s.status === 'failed'
+                      ? 'failed'
+                      : (s.status === 'partially_completed' ? 'partially_completed' : (s.status === 'completed' ? 'completed' : 'running')),
                     progress: isDone ? 100 : Math.min(25 + attempts * 15, 90),
                     findingsCount: s.total_findings_flagged || item.findingsCount,
                     highPriorityCount: Math.round((s.total_findings_flagged || 0) * 0.4),
@@ -373,11 +412,19 @@ export const AegisProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               await refreshData();
             }
           } else if (attempts >= maxAttempts) {
+            setScans(prev => prev.map(item => item.id === scanId
+              ? { ...item, status: 'failed', errorMessage: statusRes.error?.message || 'Could not retrieve scan status from the backend.' }
+              : item));
             clearInterval(pollInterval);
+            await refreshData();
           }
         } catch {
           if (attempts >= maxAttempts) {
+            setScans(prev => prev.map(item => item.id === scanId
+              ? { ...item, status: 'failed', errorMessage: 'Could not retrieve scan status from the backend.' }
+              : item));
             clearInterval(pollInterval);
+            await refreshData();
           }
         }
       }, 1200);
