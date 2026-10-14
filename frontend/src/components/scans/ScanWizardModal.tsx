@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAegis } from '../../context/AegisContext';
 import { X, Play, CheckCircle2, Shield, Globe, Users, Smartphone, Database } from 'lucide-react';
@@ -6,12 +6,36 @@ import { RadialGlowButton } from '../ui/radial-glow-button';
 
 export const ScanWizardModal: React.FC = () => {
   const navigate = useNavigate();
-  const { isScanWizardOpen, setIsScanWizardOpen, brands, runNewScan } = useAegis();
+  const { isScanWizardOpen, setIsScanWizardOpen, brands, runNewScan, refreshData } = useAegis();
   const [selectedBrandId, setSelectedBrandId] = useState(brands[0]?.id || '');
   const [scanType, setScanType] = useState('comprehensive');
   const [selectedTargets, setSelectedTargets] = useState<string[]>(['domains', 'social', 'mobile', 'darkweb']);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const [isLoadingBrands, setIsLoadingBrands] = useState(false);
+
+  useEffect(() => {
+    if (!isScanWizardOpen) return;
+    if (brands.length > 0) {
+      setIsLoadingBrands(false);
+      return;
+    }
+
+    let active = true;
+    setIsLoadingBrands(true);
+    refreshData().finally(() => {
+      if (active) setIsLoadingBrands(false);
+    });
+    return () => { active = false; };
+  }, [isScanWizardOpen, brands.length, refreshData]);
+
+  useEffect(() => {
+    if (!brands.length) {
+      setSelectedBrandId('');
+    } else if (!brands.some(brand => brand.id === selectedBrandId)) {
+      setSelectedBrandId(brands[0].id);
+    }
+  }, [brands, selectedBrandId]);
 
   if (!isScanWizardOpen) return null;
 
@@ -22,6 +46,10 @@ export const ScanWizardModal: React.FC = () => {
   };
 
   const handleStartScan = async () => {
+    if (!brands.length || !brands.some(brand => brand.id === selectedBrandId)) {
+      setSubmitError('Create a brand profile before starting a scan.');
+      return;
+    }
     setSubmitError('');
     setIsSubmitting(true);
     try {
@@ -73,6 +101,7 @@ export const ScanWizardModal: React.FC = () => {
           <select
             value={selectedBrandId}
             onChange={(e) => setSelectedBrandId(e.target.value)}
+            disabled={!brands.length}
             className="w-full rounded-xl px-3.5 py-2.5 text-sm focus:outline-none transition-colors border"
             style={{
               backgroundColor: 'var(--card-sub-bg)',
@@ -80,14 +109,37 @@ export const ScanWizardModal: React.FC = () => {
               color: 'var(--text-primary)'
             }}
           >
-            {brands.map((b) => (
+            {brands.length ? brands.map((b) => (
               <option key={b.id} value={b.id}>
                 {b.name} ({b.domain})
               </option>
-            ))}
+            )) : <option value="">No brand profiles available</option>}
           </select>
         </div>
 
+        {!brands.length ? (
+          <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--card-sub-bg)' }}>
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+              {isLoadingBrands
+                ? 'Checking for your brand profiles…'
+                : 'Create a brand profile first. Scans need a brand to know what to monitor.'}
+            </p>
+            {!isLoadingBrands && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsScanWizardOpen(false);
+                  navigate('/app/brands');
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-white"
+                style={{ backgroundColor: 'var(--primary-accent)' }}
+              >
+                Create Brand Profile
+              </button>
+            )}
+          </div>
+        ) : (
+          <>
         {/* Scan Scope Selection */}
         <div className="space-y-2">
           <label className="text-xs font-semibold uppercase tracking-wider font-mono" style={{ color: 'var(--text-muted)' }}>
@@ -189,6 +241,8 @@ export const ScanWizardModal: React.FC = () => {
             {isSubmitting ? 'Initializing...' : 'Execute Scan →'}
           </RadialGlowButton>
         </div>
+          </>
+        )}
       </div>
     </div>
   );
