@@ -105,3 +105,12 @@ def root():
         "api_v1_base": settings.API_V1_STR,
         "status": "online"
     }
+
+
+@app.get("/health")
+def health():
+    return {
+        "status": "healthy",
+        "service": settings.PROJECT_NAME,
+        "version": settings.VERSION
+    }

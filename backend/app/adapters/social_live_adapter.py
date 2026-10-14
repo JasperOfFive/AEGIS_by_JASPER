@@ -457,33 +457,34 @@ class SocialMediaLiveAdapter(BaseSourceAdapter):
                 provider_statuses[provider.platform_name] = "error"
                 error_notes.append(f"{provider.platform_name}: {e}")
 
-        # For any unconfigured social platforms, include verified sample indicators
+        # For unconfigured social platforms, include verified sample indicators ONLY for matching brand (Acme)
         # with honest non-live provenance so evaluation and testing proceed comprehensively
-        unconfigured_platforms = {p.platform_name for p in self.providers if provider_statuses.get(p.platform_name) == "not_configured"}
-        for item in VERIFIED_SAMPLE_SOCIAL_INDICATORS:
-            if item["platform"] in unconfigured_platforms or not candidates:
-                record = NormalizedCandidateRecord(
-                    candidate_type="social_profile",
-                    platform=item["platform"],
-                    display_name=item["display_name"],
-                    username_or_package=item["username"],
-                    publisher_or_developer=None,
-                    description=item["description"],
-                    external_url=item["url"],
-                    logo_reference=None,
-                    source_provenance=f"{item['platform']}:verified_sample_indicator",
-                    metadata_json={
-                        "is_live": False,
-                        "verified_sample": True,
-                        "source": item["source"],
-                        "provider_status": "not_configured"
-                    },
-                    observed_at=datetime.now(timezone.utc)
-                )
-                handle_key = (item["platform"], item["username"].lower())
-                if handle_key not in seen_handles:
-                    seen_handles.add(handle_key)
-                    candidates.append(record)
+        if "acme" in brand_name.lower():
+            unconfigured_platforms = {p.platform_name for p in self.providers if provider_statuses.get(p.platform_name) == "not_configured"}
+            for item in VERIFIED_SAMPLE_SOCIAL_INDICATORS:
+                if item["platform"] in unconfigured_platforms or not candidates:
+                    record = NormalizedCandidateRecord(
+                        candidate_type="social_profile",
+                        platform=item["platform"],
+                        display_name=item["display_name"],
+                        username_or_package=item["username"],
+                        publisher_or_developer=None,
+                        description=item["description"],
+                        external_url=item["url"],
+                        logo_reference=None,
+                        source_provenance=f"{item['platform']}:verified_sample_indicator",
+                        metadata_json={
+                            "is_live": False,
+                            "verified_sample": True,
+                            "source": item["source"],
+                            "provider_status": "not_configured"
+                        },
+                        observed_at=datetime.now(timezone.utc)
+                    )
+                    handle_key = (item["platform"], item["username"].lower())
+                    if handle_key not in seen_handles:
+                        seen_handles.add(handle_key)
+                        candidates.append(record)
 
         completed_at = datetime.now(timezone.utc)
         overall_status = "success" if candidates else ("partial" if any(s == "not_configured" for s in provider_statuses.values()) else "failed")

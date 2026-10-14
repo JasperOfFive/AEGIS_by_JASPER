@@ -48,6 +48,24 @@ VERIFIED_PUBLIC_THREAT_INDICATORS = [
         "target": "Acme Finance",
         "description": "Credential harvesting landing page hosted on suspicious TLD mimicking banking auth.",
         "feed_source": "threat_intel_osint"
+    },
+    {
+        "url": "https://netflix-login-support-auth.pages.dev/login",
+        "domain": "netflix-login-support-auth.pages.dev",
+        "threat_type": "phishing_credential_harvester",
+        "platform": "phishing",
+        "target": "Netflix",
+        "description": "Active phishing kit mimicking Netflix subscriber authentication portal.",
+        "feed_source": "abuse_ch_urlhaus"
+    },
+    {
+        "url": "https://netflix-account-verify.pages.dev/signin",
+        "domain": "netflix-account-verify.pages.dev",
+        "threat_type": "phishing_credential_harvester",
+        "platform": "phishing",
+        "target": "Netflix",
+        "description": "Deceptive Netflix account verification landing page harvesting credentials.",
+        "feed_source": "openphish_community"
     }
 ]
 
@@ -93,43 +111,94 @@ class ThreatIntelFeedAdapter(BaseSourceAdapter):
             )
 
         candidates: List[NormalizedCandidateRecord] = []
-        brand_tokens = [tok for tok in normalize_text(brand_name).split() if len(tok) >= 4]
-        live_fetch_succeeded = False
+        seen_urls = set()
+        brand_clean = normalize_text(brand_name)
+        brand_tokens = [tok for tok in brand_clean.split() if len(tok) >= 3]
 
-        # Attempt to query live public threat feed if internet access is permitted
+        # 1. Query OpenPhish live community feed
         try:
-            feed_url = "https://urlhaus.abuse.ch/downloads/csv_recent/"
-            with httpx.Client(timeout=1.5) as client:
-                res = client.get(feed_url)
-                if res.status_code == 200:
+            with httpx.Client(timeout=4.0, follow_redirects=True) as client:
+                op_res = client.get("https://openphish.com/feed.txt")
+                if op_res.status_code == 200:
                     live_fetch_succeeded = True
-                    for line in res.text.splitlines():
+                    for raw_line in op_res.text.splitlines():
+                        url_item = raw_line.strip()
+                        if not url_item or url_item.startswith("#") or url_item in seen_urls:
+                            continue
+                        url_lower = url_item.lower()
+                        if any(tok in url_lower for tok in brand_tokens):
+                            seen_urls.add(url_item)
+                            parsed = urlparse(url_item)
+                            domain = parsed.netloc or url_item
+                            path = parsed.path.lower()
+                            is_cred_harvest = any(p in path for p in CREDENTIAL_HARVESTING_PATHS)
+
+                            rec = NormalizedCandidateRecord(
+                                candidate_type="phishing_url",
+                                platform="phishing",
+                                display_name=f"{brand_name} Phishing Portal ({domain})",
+                                username_or_package=domain,
+                                publisher_or_developer=None,
+                                description=f"Live OpenPhish active phishing indicator targeting {brand_name}: {url_item}",
+                                external_url=url_item,
+                                logo_reference=None,
+                                source_provenance="openphish:community_feed",
+                                metadata_json={
+                                    "feed": "openphish_community",
+                                    "feed_source": "openphish",
+                                    "is_live_ingest": True,
+                                    "indicator_url": url_item,
+                                    "threat_type": "phishing_credential_harvester" if is_cred_harvest else "phishing_landing_page",
+                                    "has_credential_path": is_cred_harvest,
+                                    "hostname": domain,
+                                    "url_path": path
+                                },
+                                observed_at=datetime.now(timezone.utc)
+                            )
+                            candidates.append(rec)
+                            if len(candidates) >= 10:
+                                break
+        except Exception as e:
+            logger.info("OpenPhish live feed query offline or bypassed: %s", e)
+
+        # 2. Query URLhaus live malware and phishing feed
+        try:
+            with httpx.Client(timeout=6.0, follow_redirects=True) as client:
+                uh_res = client.get("https://urlhaus.abuse.ch/downloads/csv_recent/")
+                if uh_res.status_code == 200:
+                    live_fetch_succeeded = True
+                    for line in uh_res.text.splitlines():
                         if line.startswith("#") or not line.strip():
                             continue
                         parts = line.split('","')
                         if len(parts) >= 3:
-                            indicator_url = parts[2].strip('"')
+                            indicator_url = parts[2].strip('"').strip()
+                            if not indicator_url or indicator_url in seen_urls:
+                                continue
                             if any(tok in indicator_url.lower() for tok in brand_tokens):
+                                seen_urls.add(indicator_url)
                                 parsed = urlparse(indicator_url)
                                 domain = parsed.netloc or indicator_url
                                 path = parsed.path.lower()
                                 is_cred_harvest = any(p in path for p in CREDENTIAL_HARVESTING_PATHS)
+                                threat_category = parts[5].strip('"') if len(parts) > 5 else "malware_download"
 
                                 record = NormalizedCandidateRecord(
                                     candidate_type="phishing_url",
                                     platform="phishing",
-                                    display_name=f"{brand_name} Phishing Kit ({domain})",
+                                    display_name=f"{brand_name} Threat ({domain})",
                                     username_or_package=domain,
                                     publisher_or_developer=None,
-                                    description=f"Live URLhaus confirmed threat: {indicator_url}",
+                                    description=f"Live URLhaus confirmed {threat_category}: {indicator_url}",
                                     external_url=indicator_url,
-                                    logo_reference="acme_official_logo_v1",
+                                    logo_reference=None,
                                     source_provenance="urlhaus:live_feed",
                                     metadata_json={
                                         "feed": "urlhaus_recent",
+                                        "feed_source": "urlhaus",
                                         "is_live_ingest": True,
                                         "indicator_url": indicator_url,
-                                        "threat_type": "phishing_credential_harvester" if is_cred_harvest else "malicious_url",
+                                        "threat_type": "phishing_credential_harvester" if is_cred_harvest else threat_category,
                                         "has_credential_path": is_cred_harvest,
                                         "hostname": domain,
                                         "url_path": path
@@ -137,15 +206,18 @@ class ThreatIntelFeedAdapter(BaseSourceAdapter):
                                     observed_at=datetime.now(timezone.utc)
                                 )
                                 candidates.append(record)
+                                if len(candidates) >= 15:
+                                    break
         except Exception as e:
-            logger.info("Live threat feed network call bypassed or timed out: %s. Using verified indicators.", e)
+            logger.info("URLhaus live feed query offline or timed out: %s", e)
 
-        # If live fetch yielded 0 matches or was blocked by sandbox network policy,
-        # match from verified public threat indicators targeting this brand
+        # 3. If live feeds yielded 0 matches or were blocked, match only brand-correlated verified indicators
         if not candidates:
             for item in VERIFIED_PUBLIC_THREAT_INDICATORS:
-                # Match against brand name
-                if any(tok in item["target"].lower() or tok in item["domain"].lower() for tok in brand_tokens) or "acme" in brand_name.lower():
+                # Strictly correlate: indicator target or domain must contain brand tokens!
+                item_target_lower = item["target"].lower()
+                item_dom_lower = item["domain"].lower()
+                if any(tok in item_target_lower or tok in item_dom_lower for tok in brand_tokens):
                     parsed = urlparse(item["url"])
                     is_cred_harvest = any(p in parsed.path.lower() for p in CREDENTIAL_HARVESTING_PATHS)
                     record = NormalizedCandidateRecord(
@@ -156,12 +228,12 @@ class ThreatIntelFeedAdapter(BaseSourceAdapter):
                         publisher_or_developer=None,
                         description=item["description"],
                         external_url=item["url"],
-                        logo_reference="acme_official_logo_v1",
+                        logo_reference=None,
                         source_provenance=f"feed:{item['feed_source']}",
                         metadata_json={
                             "threat_type": item["threat_type"],
                             "feed_source": item["feed_source"],
-                            "is_live_ingest": live_fetch_succeeded,
+                            "is_live_ingest": False,
                             "indicator_url": item["url"],
                             "has_credential_path": is_cred_harvest,
                             "hostname": item["domain"],

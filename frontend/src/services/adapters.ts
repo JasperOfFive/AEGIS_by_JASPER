@@ -41,6 +41,7 @@ export interface BackendReviewResponse {
 export interface BackendFindingResponse {
   id: string;
   brand_id: string;
+  brand_name?: string;
   candidate_id: string;
   scan_run_id: string;
   risk_score: number;
@@ -93,6 +94,7 @@ export interface BackendBrandResponse {
 export interface BackendScanRunResponse {
   id: string;
   brand_id: string;
+  brand_name?: string;
   requested_source_types?: string[];
   status: string;
   progress_percent?: number;
@@ -153,7 +155,7 @@ export function backendFindingToFrontend(
   brandMap: Record<string, BackendBrandResponse> = {}
 ): Finding & { raw?: BackendFindingResponse } {
   const brand = brandMap[f.brand_id];
-  const brandName = brand?.name || 'Acme Finance Group';
+  const brandName = f.brand_name || brand?.name || 'Unknown Brand';
   const candidate = f.candidate;
 
   const candidateType = candidate?.candidate_type || 'social_profile';
@@ -264,7 +266,7 @@ export function backendScanToFrontend(
   s: BackendScanRunResponse,
   brandMap: Record<string, BackendBrandResponse> = {}
 ): Scan {
-  const brandName = brandMap[s.brand_id]?.name || 'Acme Finance Group';
+  const brandName = s.brand_name || brandMap[s.brand_id]?.name || 'Unknown Brand';
 
   let status: Scan['status'] = 'completed';
   if (s.status === 'running') status = 'running';

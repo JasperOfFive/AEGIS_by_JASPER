@@ -32,6 +32,7 @@ class ScanRunResponse(BaseModel):
 
     id: str
     brand_id: str
+    brand_name: Optional[str] = None
     requested_source_types: List[str]
     status: str
     started_at: Optional[datetime] = None
@@ -48,6 +49,7 @@ class ScanStatusResponse(BaseModel):
 
     id: str
     brand_id: str
+    brand_name: Optional[str] = None
     status: str
     is_terminal: bool
     started_at: Optional[datetime] = None

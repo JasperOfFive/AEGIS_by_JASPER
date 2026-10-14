@@ -34,6 +34,10 @@ class ScanRun(Base):
     observations: Mapped[List["CandidateObservation"]] = relationship("CandidateObservation", back_populates="scan_run", cascade="all, delete-orphan")
     findings: Mapped[List["Finding"]] = relationship("Finding", back_populates="scan_run")
 
+    @property
+    def brand_name(self) -> str | None:
+        return self.brand.name if self.brand else None
+
 
 class ScanSourceResult(Base):
     __tablename__ = "scan_source_results"

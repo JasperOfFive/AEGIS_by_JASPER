@@ -135,33 +135,34 @@ class LookalikeDomainAdapter(BaseSourceAdapter):
             )
             candidates.append(record)
 
-        # 3. Always include verified indicators for the brand to guarantee high-quality reproducible evaluation
-        for item in CURATED_LOOKALIKE_DOMAIN_INDICATORS:
-            record = NormalizedCandidateRecord(
-                candidate_type="lookalike_domain",
-                platform="domain",
-                display_name=f"{item['domain']} (Lookalike Domain)",
-                username_or_package=item["domain"],
-                publisher_or_developer=None,
-                description=item["description"],
-                external_url=f"https://{item['domain']}",
-                logo_reference="acme_official_logo_v1",
-                source_provenance="domain:curated_indicator",
-                metadata_json={
-                    "technique": item["technique"],
-                    "is_resolved": item["is_resolved"],
-                    "resolved_ips": item["resolved_ips"],
-                    "dns_status": item["dns_status"],
-                    "has_mx": item["has_mx"],
-                    "is_parked": item["is_parked"],
-                    "http_accessible": item["http_accessible"],
-                    "http_title": item["http_title"],
-                    "is_live_dns": False,
-                    "target_brand": brand_name
-                },
-                observed_at=datetime.now(timezone.utc)
-            )
-            candidates.append(record)
+        # 3. Include curated evaluation indicators ONLY for Acme brand
+        if "acme" in brand_name.lower():
+            for item in CURATED_LOOKALIKE_DOMAIN_INDICATORS:
+                record = NormalizedCandidateRecord(
+                    candidate_type="lookalike_domain",
+                    platform="domain",
+                    display_name=f"{item['domain']} (Lookalike Domain)",
+                    username_or_package=item["domain"],
+                    publisher_or_developer=None,
+                    description=item["description"],
+                    external_url=f"https://{item['domain']}",
+                    logo_reference="acme_official_logo_v1",
+                    source_provenance="domain:curated_indicator",
+                    metadata_json={
+                        "technique": item["technique"],
+                        "is_resolved": item["is_resolved"],
+                        "resolved_ips": item["resolved_ips"],
+                        "dns_status": item["dns_status"],
+                        "has_mx": item["has_mx"],
+                        "is_parked": item["is_parked"],
+                        "http_accessible": item["http_accessible"],
+                        "http_title": item["http_title"],
+                        "is_live_dns": False,
+                        "target_brand": brand_name
+                    },
+                    observed_at=datetime.now(timezone.utc)
+                )
+                candidates.append(record)
 
         completed_at = datetime.now(timezone.utc)
         return AdapterResult(

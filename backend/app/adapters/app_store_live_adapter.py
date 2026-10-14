@@ -17,11 +17,12 @@ from urllib.parse import quote_plus
 import httpx
 
 try:
-    from google_play_scraper import search as play_search
+    from google_play_scraper import search as play_search, app as play_app
     HAS_GOOGLE_PLAY_SCRAPER = True
 except ImportError:
     HAS_GOOGLE_PLAY_SCRAPER = False
     play_search = None
+    play_app = None
 
 from app.adapters.base import BaseSourceAdapter, AdapterResult, NormalizedCandidateRecord
 from app.core.config import settings
@@ -121,10 +122,13 @@ class AppleAppStoreLiveProvider:
                             source_provenance="apple_app_store:live_itunes_catalog",
                             metadata_json={
                                 "track_id": app.get("trackId"),
+                                "artist_id": app.get("artistId"),
                                 "version": app.get("version"),
                                 "price": app.get("price", 0.0),
                                 "rating": app.get("averageUserRating"),
                                 "rating_count": app.get("userRatingCount"),
+                                "seller_url": app.get("sellerUrl"),
+                                "developer_website": app.get("sellerUrl"),
                                 "primary_genre": app.get("primaryGenreName"),
                                 "release_date": app.get("currentVersionReleaseDate"),
                                 "is_live": True,
@@ -185,6 +189,9 @@ class GooglePlayLiveProvider:
                 return "LIVE_NO_RESULTS", [], f"Google Play search returned 0 matching applications for query '{clean_query}'."
 
             candidates: List[NormalizedCandidateRecord] = []
+            clean_q_lower = clean_query.lower()
+
+            enriched_count = 0
             for item in raw_results:
                 app_id = (item.get("appId") or "").strip()
                 if not app_id:
@@ -195,6 +202,25 @@ class GooglePlayLiveProvider:
                 desc = (item.get("description") or f"Google Play application '{title}' by {developer}.").strip()
                 icon = item.get("icon") or None
                 store_url = f"https://play.google.com/store/apps/details?id={app_id}"
+
+                dev_site = item.get("developerWebsite")
+                dev_email = item.get("developerEmail")
+                dev_id = item.get("developerId")
+                ratings = item.get("ratings")
+
+                # If developer contact details are not in the search snippet, enrich brand-matching apps (bounded to top 2)
+                if (not dev_site or not dev_email) and HAS_GOOGLE_PLAY_SCRAPER and play_app and enriched_count < 2:
+                    if clean_q_lower in title.lower() or clean_q_lower in app_id.lower() or clean_q_lower in developer.lower():
+                        try:
+                            detail = play_app(app_id, lang=lang, country=country)
+                            if detail:
+                                dev_site = dev_site or detail.get("developerWebsite")
+                                dev_email = dev_email or detail.get("developerEmail")
+                                dev_id = dev_id or detail.get("developerId")
+                                ratings = ratings or detail.get("ratings")
+                                enriched_count += 1
+                        except Exception as enrich_err:
+                            logger.debug("Google Play detail enrichment skipped for %s: %s", app_id, enrich_err)
 
                 rec = NormalizedCandidateRecord(
                     candidate_type="mobile_app",
@@ -208,6 +234,10 @@ class GooglePlayLiveProvider:
                     source_provenance="google_play:live_catalog",
                     metadata_json={
                         "package_id": app_id,
+                        "developer_website": dev_site,
+                        "developer_email": dev_email,
+                        "developer_id": dev_id,
+                        "ratings": ratings,
                         "score": item.get("score"),
                         "installs": item.get("installs"),
                         "genre": item.get("genre"),
@@ -328,9 +358,12 @@ class AppStoreLiveAdapter(BaseSourceAdapter):
             errors.append(f"Google Play Store live error: {e}")
 
         # 3. Supply verified catalog sample indicators ONLY when live search was blocked/failed/unconfigured
-        # Never inject fake samples if live search legitimately returned 0 matching results (LIVE_NO_RESULTS)
-        if not play_results and gp_status in ("NOT_CONFIGURED", "BLOCKED", "FAILED"):
-            logger.info("Google Play live collector status is %s; providing verified sample indicators for evaluation.", gp_status)
+        # AND only if the brand being monitored matches the sample indicator set (Acme).
+        # Never inject fake samples if live search legitimately returned 0 matching results (LIVE_NO_RESULTS).
+        # Never cross-inject other-brand sample indicators into a different brand!
+        is_acme_target = "acme" in brand_name.lower()
+        if is_acme_target and not play_results and gp_status in ("NOT_CONFIGURED", "BLOCKED", "FAILED"):
+            logger.info("Google Play live collector status is %s; providing verified sample indicators for Acme evaluation.", gp_status)
             for item in VERIFIED_SAMPLE_APP_STORE_INDICATORS:
                 if item["platform"] == "google_play":
                     record = NormalizedCandidateRecord(
@@ -356,9 +389,9 @@ class AppStoreLiveAdapter(BaseSourceAdapter):
                         seen_packages.add(pkg_key)
                         candidates.append(record)
 
-        # 4. If Apple was also offline/failed and candidate list is empty, include Apple sample indicators
-        if not candidates:
-            logger.info("Store endpoints returned 0 items; loading verified store catalog indicators.")
+        # 4. If Apple was also offline/failed and candidate list is empty, include Apple sample indicators ONLY for matching brand
+        if is_acme_target and not candidates:
+            logger.info("Store endpoints returned 0 items; loading verified store catalog indicators for Acme evaluation.")
             for item in VERIFIED_SAMPLE_APP_STORE_INDICATORS:
                 record = NormalizedCandidateRecord(
                     candidate_type="mobile_app",

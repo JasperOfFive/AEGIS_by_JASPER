@@ -31,6 +31,7 @@ class FindingResponse(FindingBase):
 
     id: str
     brand_id: str
+    brand_name: Optional[str] = None
     candidate_id: str
     scan_run_id: str
     first_detected_at: datetime

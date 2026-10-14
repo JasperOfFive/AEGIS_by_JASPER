@@ -80,7 +80,8 @@ class FindingService:
             select(Finding)
             .options(
                 joinedload(Finding.candidate),
-                joinedload(Finding.reviews)
+                joinedload(Finding.reviews),
+                joinedload(Finding.brand)
             )
             .where(Finding.id == finding_id)
         )
@@ -124,9 +125,13 @@ class FindingService:
             count_query = count_query.where(and_(*conditions))
         total = db.scalar(count_query) or 0
 
-        # Eager load candidate and reviews
+        # Eager load candidate, reviews, and brand
         query = (
-            query.options(joinedload(Finding.candidate), joinedload(Finding.reviews))
+            query.options(
+                joinedload(Finding.candidate),
+                joinedload(Finding.reviews),
+                joinedload(Finding.brand)
+            )
             .order_by(Finding.risk_score.desc(), Finding.last_detected_at.desc())
             .offset(skip)
             .limit(limit)

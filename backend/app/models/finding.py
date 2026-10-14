@@ -50,6 +50,10 @@ class Finding(Base):
     scan_run: Mapped["ScanRun"] = relationship("ScanRun", back_populates="findings")
     reviews: Mapped[List["Review"]] = relationship("Review", back_populates="finding", cascade="all, delete-orphan", order_by="Review.created_at.desc()")
 
+    @property
+    def brand_name(self) -> str | None:
+        return self.brand.name if self.brand else None
+
     __table_args__ = (
         UniqueConstraint("brand_id", "candidate_id", name="uq_finding_brand_candidate"),
     )

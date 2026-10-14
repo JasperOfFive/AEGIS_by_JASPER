@@ -15,7 +15,14 @@ import {
   backendScanToFrontend
 } from './adapters';
 
-export const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || '/api/v1';
+const envBase = (import.meta as any).env?.VITE_API_BASE_URL;
+let formattedBase = envBase
+  ? (envBase.startsWith('http') || envBase.startsWith('/') ? envBase : `https://${envBase}`)
+  : '/api/v1';
+
+export const API_BASE_URL = formattedBase.endsWith('/api/v1')
+  ? formattedBase
+  : (formattedBase.startsWith('http') ? `${formattedBase.replace(/\/+$/, '')}/api/v1` : formattedBase);
 
 /**
  * Standard HTTP headers helper with Bearer token authentication

@@ -146,13 +146,13 @@ def evaluate_candidate(
             text_comp=text_comp,
             metadata=c_meta
         )
-        if c_meta.get("feed_source"):
-            decision = ExclusionDecision.CONFIRMED_PHISHING.value
+        if scoring.total_score >= 50.0:
+            if c_meta.get("feed_source") or c_meta.get("is_live_ingest"):
+                decision = ExclusionDecision.CONFIRMED_PHISHING.value
+            else:
+                decision = ExclusionDecision.SUSPICIOUS_NEEDS_REVIEW.value
             is_threat = True
-        elif scoring.total_score >= 50.0:
-            decision = ExclusionDecision.SUSPICIOUS_NEEDS_REVIEW.value
-            is_threat = True
-        elif scoring.total_score >= 30.0:
+        elif scoring.total_score >= 35.0:
             decision = ExclusionDecision.POTENTIAL_IMPERSONATION.value
             is_threat = True
         else:
@@ -180,10 +180,40 @@ def evaluate_candidate(
         # Publisher check
         pub_norm = normalize_text(c_pub or "")
         publisher_mismatch = False
-        if official_publishers:
+        UNVERIFIED_PUBLISHER_AFFIXES = {
+            "guide", "fan", "free", "tips", "mod", "tricks", "hack", "streamer",
+            "player", "unofficial", "helper", "community", "club", "tube", "zone",
+            "hub", "apk", "downloader", "download", "movies", "tv", "cheats", "tools"
+        }
+        CORPORATE_ENTITY_SUFFIXES = {
+            "inc", "inc.", "llc", "corp", "corporation", "ltd", "limited", "co",
+            "company", "entertainment", "interactive", "technologies", "group",
+            "media", "services", "bv", "gmbh", "plc", "holdings"
+        }
+
+        pub_words = set(pub_norm.split())
+        if pub_words & UNVERIFIED_PUBLISHER_AFFIXES:
+            publisher_mismatch = True
+        elif official_publishers:
             publisher_mismatch = pub_norm not in official_publishers
         elif c_pub and b_name:
-            publisher_mismatch = normalize_text(b_name) not in pub_norm
+            brand_norm = normalize_text(b_name)
+            brand_tokens = [tok for tok in brand_norm.split() if len(tok) >= 3]
+            if pub_norm == brand_norm or brand_norm in pub_norm:
+                # Extra words in publisher name must only be corporate entity suffixes
+                extra_words = pub_words - set(brand_tokens)
+                if not extra_words or extra_words.issubset(CORPORATE_ENTITY_SUFFIXES):
+                    publisher_mismatch = False
+                else:
+                    publisher_mismatch = True
+            elif brand_tokens and all(tok in pub_norm for tok in brand_tokens):
+                extra_words = pub_words - set(brand_tokens)
+                if not extra_words or extra_words.issubset(CORPORATE_ENTITY_SUFFIXES):
+                    publisher_mismatch = False
+                else:
+                    publisher_mismatch = True
+            else:
+                publisher_mismatch = True
 
         # Package ID signals
         pkg_norm = normalize_package_id(c_user_pkg or "")
@@ -199,8 +229,15 @@ def evaluate_candidate(
 
         # Telemetry / corroborating evidence
         corroborating = 0.0
-        downloads = c_meta.get("downloads", 0)
-        rating = c_meta.get("rating", 0.0)
+        downloads = c_meta.get("downloads")
+        if downloads is None:
+            installs_raw = str(c_meta.get("installs") or "")
+            clean_digits = "".join(ch for ch in installs_raw if ch.isdigit())
+            if clean_digits:
+                downloads = int(clean_digits)
+            else:
+                downloads = c_meta.get("rating_count") or c_meta.get("ratings")
+
         if downloads is not None and downloads < 500 and name_comp.overall_similarity > 0.6:
             corroborating += 0.5
         if c_meta.get("suspicious_permissions"):
@@ -219,8 +256,11 @@ def evaluate_candidate(
             corroborating_score=corroborating,
             metadata=c_meta
         )
-        if scoring.total_score < 40.0 and not name_comp.is_exact_match:
-            decision = ExclusionDecision.INSUFFICIENT_EVIDENCE.value
+        if scoring.total_score < 40.0:
+            if not publisher_mismatch and (name_comp.is_exact_match or name_comp.overall_similarity > 0.7):
+                decision = ExclusionDecision.LIKELY_OFFICIAL_MATCH.value
+            else:
+                decision = ExclusionDecision.INSUFFICIENT_EVIDENCE.value
             is_threat = False
         else:
             decision = ExclusionDecision.POTENTIAL_IMPERSONATION.value

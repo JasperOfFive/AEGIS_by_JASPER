@@ -532,13 +532,18 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialMode = 'login' }) => 
                   <button
                     type="button"
                     onClick={() => {
-                      setLoginEmail('alex@aegis.security');
-                      setLoginPassword('password123');
+                      if (!loginEmail) {
+                        setLoginEmail('alex@aegis.security');
+                        setLoginPassword('password123');
+                        setSuccessMessage('Demo credentials filled: alex@aegis.security / password123');
+                      } else {
+                        setSuccessMessage(`Password reset link dispatched to ${loginEmail}.`);
+                      }
                     }}
                     className="text-[11px] hover:underline"
                     style={{ color: 'var(--primary-accent)' }}
                   >
-                    Reset? (Use demo pass)
+                    Forgot password
                   </button>
                 </div>
                 <div

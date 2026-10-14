@@ -31,6 +31,12 @@ interface AegisContextType {
 
 const AegisContext = createContext<AegisContextType | undefined>(undefined);
 
+export const isDemoUser = (user: { email?: string } | null | undefined): boolean => {
+  if (!user || !user.email) return true;
+  const email = user.email.toLowerCase().trim();
+  return email === 'alex@aegis.security' || email === 'admin@aegis.com';
+};
+
 export const AegisProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<{ name: string; email: string } | null>(() => {
     const saved = localStorage.getItem('aegis-current-user');
@@ -39,11 +45,66 @@ export const AegisProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const isAuthenticated = Boolean(currentUser);
 
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    const saved = localStorage.getItem('aegis-theme');
+    return (saved as 'dark' | 'light') || 'dark';
+  });
+
+  const [brands, setBrands] = useState<Brand[]>(() => {
+    const userSaved = localStorage.getItem('aegis-current-user');
+    const user = userSaved ? JSON.parse(userSaved) : null;
+    if (user && !isDemoUser(user)) {
+      const saved = localStorage.getItem(`aegis-brands-${user.email.toLowerCase().trim()}`);
+      return saved ? JSON.parse(saved) : [];
+    }
+    const saved = localStorage.getItem('aegis-brands-demo') || localStorage.getItem('aegis-brands');
+    return saved ? JSON.parse(saved) : INITIAL_BRANDS;
+  });
+
+  const [findings, setFindings] = useState<Finding[]>(() => {
+    const userSaved = localStorage.getItem('aegis-current-user');
+    const user = userSaved ? JSON.parse(userSaved) : null;
+    if (user && !isDemoUser(user)) {
+      const saved = localStorage.getItem(`aegis-findings-${user.email.toLowerCase().trim()}`);
+      return saved ? JSON.parse(saved) : [];
+    }
+    const saved = localStorage.getItem('aegis-findings-demo') || localStorage.getItem('aegis-findings');
+    return saved ? JSON.parse(saved) : INITIAL_FINDINGS;
+  });
+
+  const [scans, setScans] = useState<Scan[]>(() => {
+    const userSaved = localStorage.getItem('aegis-current-user');
+    const user = userSaved ? JSON.parse(userSaved) : null;
+    if (user && !isDemoUser(user)) {
+      const saved = localStorage.getItem(`aegis-scans-${user.email.toLowerCase().trim()}`);
+      return saved ? JSON.parse(saved) : [];
+    }
+    const saved = localStorage.getItem('aegis-scans-demo') || localStorage.getItem('aegis-scans');
+    return saved ? JSON.parse(saved) : INITIAL_SCANS;
+  });
+
   const handleSetCurrentUser = (user: { name: string; email: string } | null) => {
     setCurrentUser(user);
     if (user) {
       localStorage.setItem('aegis-current-user', JSON.stringify(user));
       localStorage.setItem('aegis-authenticated', 'true');
+      if (isDemoUser(user)) {
+        const savedBrands = localStorage.getItem('aegis-brands-demo') || localStorage.getItem('aegis-brands');
+        const savedFindings = localStorage.getItem('aegis-findings-demo') || localStorage.getItem('aegis-findings');
+        const savedScans = localStorage.getItem('aegis-scans-demo') || localStorage.getItem('aegis-scans');
+        setBrands(savedBrands ? JSON.parse(savedBrands) : INITIAL_BRANDS);
+        setFindings(savedFindings ? JSON.parse(savedFindings) : INITIAL_FINDINGS);
+        setScans(savedScans ? JSON.parse(savedScans) : INITIAL_SCANS);
+      } else {
+        // New user profile: no mock data present!
+        const userKey = user.email.toLowerCase().trim();
+        const savedBrands = localStorage.getItem(`aegis-brands-${userKey}`);
+        const savedFindings = localStorage.getItem(`aegis-findings-${userKey}`);
+        const savedScans = localStorage.getItem(`aegis-scans-${userKey}`);
+        setBrands(savedBrands ? JSON.parse(savedBrands) : []);
+        setFindings(savedFindings ? JSON.parse(savedFindings) : []);
+        setScans(savedScans ? JSON.parse(savedScans) : []);
+      }
     } else {
       localStorage.removeItem('aegis-current-user');
       localStorage.removeItem('aegis-authenticated');
@@ -56,41 +117,37 @@ export const AegisProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     handleSetCurrentUser(null);
   };
 
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
-    const saved = localStorage.getItem('aegis-theme');
-    return (saved as 'dark' | 'light') || 'dark';
-  });
-
-  const [brands, setBrands] = useState<Brand[]>(() => {
-    const saved = localStorage.getItem('aegis-brands');
-    return saved ? JSON.parse(saved) : INITIAL_BRANDS;
-  });
-
-  const [findings, setFindings] = useState<Finding[]>(() => {
-    const saved = localStorage.getItem('aegis-findings');
-    return saved ? JSON.parse(saved) : INITIAL_FINDINGS;
-  });
-
-  const [scans, setScans] = useState<Scan[]>(() => {
-    const saved = localStorage.getItem('aegis-scans');
-    return saved ? JSON.parse(saved) : INITIAL_SCANS;
-  });
-
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null);
   const [isScanWizardOpen, setIsScanWizardOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Reusable function to synchronize with real FastAPI backend
   const refreshData = useCallback(async () => {
+    // For newly created non-demo profiles, keep clean without global demo mock data
+    if (currentUser && !isDemoUser(currentUser)) {
+      return;
+    }
     try {
-      const [bRes, fRes, sRes] = await Promise.all([
-        api.brands.getAll(),
-        api.findings.getAll(),
-        api.scans.getAll()
-      ]);
+      const bRes = await api.brands.getAll();
+      const brandMap: Record<string, any> = {};
       if (bRes.data && Array.isArray(bRes.data) && bRes.data.length > 0) {
         setBrands(bRes.data);
+        bRes.data.forEach((b: any) => {
+          brandMap[b.id] = {
+            id: b.id,
+            name: b.name,
+            primary_website: b.domain,
+            is_active: b.status === 'active',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          };
+        });
       }
+
+      const [fRes, sRes] = await Promise.all([
+        api.findings.getAll(brandMap),
+        api.scans.getAll(brandMap)
+      ]);
       if (fRes.data && Array.isArray(fRes.data) && fRes.data.length > 0) {
         setFindings(fRes.data);
       }
@@ -100,7 +157,7 @@ export const AegisProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch (err) {
       console.warn('Backend sync warning:', err);
     }
-  }, []);
+  }, [currentUser]);
 
   // Automatic Backend Synchronization on initial mount
   useEffect(() => {
@@ -119,16 +176,34 @@ export const AegisProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [theme]);
 
   useEffect(() => {
-    localStorage.setItem('aegis-brands', JSON.stringify(brands));
-  }, [brands]);
+    if (!currentUser) return;
+    if (isDemoUser(currentUser)) {
+      localStorage.setItem('aegis-brands-demo', JSON.stringify(brands));
+      localStorage.setItem('aegis-brands', JSON.stringify(brands));
+    } else {
+      localStorage.setItem(`aegis-brands-${currentUser.email.toLowerCase().trim()}`, JSON.stringify(brands));
+    }
+  }, [brands, currentUser]);
 
   useEffect(() => {
-    localStorage.setItem('aegis-findings', JSON.stringify(findings));
-  }, [findings]);
+    if (!currentUser) return;
+    if (isDemoUser(currentUser)) {
+      localStorage.setItem('aegis-findings-demo', JSON.stringify(findings));
+      localStorage.setItem('aegis-findings', JSON.stringify(findings));
+    } else {
+      localStorage.setItem(`aegis-findings-${currentUser.email.toLowerCase().trim()}`, JSON.stringify(findings));
+    }
+  }, [findings, currentUser]);
 
   useEffect(() => {
-    localStorage.setItem('aegis-scans', JSON.stringify(scans));
-  }, [scans]);
+    if (!currentUser) return;
+    if (isDemoUser(currentUser)) {
+      localStorage.setItem('aegis-scans-demo', JSON.stringify(scans));
+      localStorage.setItem('aegis-scans', JSON.stringify(scans));
+    } else {
+      localStorage.setItem(`aegis-scans-${currentUser.email.toLowerCase().trim()}`, JSON.stringify(scans));
+    }
+  }, [scans, currentUser]);
 
   const toggleTheme = () => {
     setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
@@ -243,8 +318,8 @@ export const AegisProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const runNewScan = async (brandId: string, targets: string[], scanType: string) => {
-    const brand = brands.find(b => b.id === brandId) || brands[0];
-    const brandName = brand ? brand.name : 'Acme Finance Group';
+    const brand = brands.find(b => b.id === brandId);
+    const brandName = brand?.name || 'Target Brand';
 
     const res = await api.scans.run(brandId, targets, scanType);
     const scanId = res.data?.id || `scan-${Date.now()}`;

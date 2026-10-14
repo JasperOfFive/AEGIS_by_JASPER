@@ -78,7 +78,7 @@ class ScanService:
     def get_by_id(db: Session, scan_id: str) -> ScanRun:
         scan = db.scalar(
             select(ScanRun)
-            .options(joinedload(ScanRun.source_results))
+            .options(joinedload(ScanRun.source_results), joinedload(ScanRun.brand))
             .where(ScanRun.id == scan_id)
         )
         if not scan:
@@ -89,7 +89,7 @@ class ScanService:
     def list_by_brand(db: Session, brand_id: str) -> List[ScanRun]:
         return db.scalars(
             select(ScanRun)
-            .options(joinedload(ScanRun.source_results))
+            .options(joinedload(ScanRun.source_results), joinedload(ScanRun.brand))
             .where(ScanRun.brand_id == brand_id)
             .order_by(ScanRun.created_at.desc())
         ).unique().all()
@@ -98,7 +98,7 @@ class ScanService:
     def list_all(db: Session, limit: int = 50) -> List[ScanRun]:
         return db.scalars(
             select(ScanRun)
-            .options(joinedload(ScanRun.source_results))
+            .options(joinedload(ScanRun.source_results), joinedload(ScanRun.brand))
             .order_by(ScanRun.created_at.desc())
             .limit(limit)
         ).unique().all()

@@ -226,53 +226,78 @@ def calculate_app_risk(
     reasons: List[str] = []
 
     # 1. App name similarity (max 25)
-    name_score = name_comp.overall_similarity * settings.WEIGHT_APP_NAME
-    name_expl = f"Application title similarity is {name_comp.overall_similarity:.1%}."
-    if name_comp.is_exact_match:
-        name_expl = f"App title exactly matches brand name '{brand_name}'."
-        reasons.append(f"Mobile application title duplicates brand name '{brand_name}'.")
-    elif name_comp.is_single_typo or name_comp.is_transposition:
-        reasons.append(f"Mobile application title typosquats brand name: '{name_comp.candidate_name}'.")
-    elif name_comp.has_suspicious_affix:
-        reasons.append(f"App title combines brand name with sensitive financial/service terms ({', '.join(name_comp.matched_affixes)}).")
+    if publisher_mismatch:
+        name_score = name_comp.overall_similarity * settings.WEIGHT_APP_NAME
+        name_expl = f"Application title similarity is {name_comp.overall_similarity:.1%} under unverified developer."
+        if name_comp.is_exact_match:
+            name_expl = f"App title exactly matches brand name '{brand_name}' without publisher authorization."
+            reasons.append(f"Mobile application title duplicates brand name '{brand_name}' without authorization.")
+        elif name_comp.is_single_typo or name_comp.is_transposition:
+            reasons.append(f"Mobile application title typosquats brand name: '{name_comp.candidate_name}'.")
+        elif name_comp.has_suspicious_affix:
+            reasons.append(f"App title combines brand name with sensitive financial/service terms ({', '.join(name_comp.matched_affixes)}).")
+    else:
+        # Publisher matches brand or is authorized entity
+        # Exact app title matching the brand is legitimate branding, not an attack signal!
+        if name_comp.is_single_typo or name_comp.is_transposition:
+            name_score = name_comp.overall_similarity * settings.WEIGHT_APP_NAME * 0.5
+            reasons.append(f"Mobile application title has typosquat variation: '{name_comp.candidate_name}'.")
+            name_expl = f"Application title variation ({name_comp.candidate_name}) under matching publisher."
+        elif name_comp.has_suspicious_affix:
+            name_score = 5.0
+            name_expl = f"Application title combines brand with terms ({', '.join(name_comp.matched_affixes)})."
+        else:
+            name_score = 0.0
+            name_expl = f"App title matches brand name '{brand_name}' under verified publisher identity."
 
     signals.append(SignalResult(
         signal_name="App Name Similarity",
         category="name",
         score_contribution=name_score,
         max_weight=settings.WEIGHT_APP_NAME,
-        raw_score=name_comp.overall_similarity,
+        raw_score=name_comp.overall_similarity if publisher_mismatch else 0.0,
         observed_value=name_comp.candidate_name,
         target_value=brand_name,
         explanation=name_expl
     ))
 
     # 2. App logo / icon similarity (max 20)
-    logo_score = logo_comp.similarity_score * settings.WEIGHT_APP_LOGO
+    if publisher_mismatch:
+        logo_score = logo_comp.similarity_score * settings.WEIGHT_APP_LOGO
+        if logo_comp.similarity_score >= 0.8:
+            reasons.append("App uses identical or deceptive variant of the official brand icon without publisher authorization.")
+    else:
+        # Legitimate brand publisher using official logo
+        logo_score = 0.0
+
     signals.append(SignalResult(
         signal_name="App Icon Trademark Similarity",
         category="logo",
         score_contribution=logo_score,
         max_weight=settings.WEIGHT_APP_LOGO,
-        raw_score=logo_comp.similarity_score,
+        raw_score=logo_comp.similarity_score if publisher_mismatch else 0.0,
         observed_value=logo_comp.candidate_logo_ref,
         target_value=logo_comp.brand_logo_ref,
-        explanation=logo_comp.explanation
+        explanation=logo_comp.explanation if publisher_mismatch else "Brand iconography under verified publisher identity."
     ))
-    if logo_comp.similarity_score >= 0.8:
-        reasons.append("App uses identical or deceptive variant of the official brand icon.")
 
     # 3. Description similarity (max 15)
-    desc_score = text_comp.overall_score * settings.WEIGHT_APP_DESCRIPTION
+    if publisher_mismatch:
+        desc_score = text_comp.overall_score * settings.WEIGHT_APP_DESCRIPTION
+        desc_expl = f"Description token overlap and brand keyword presence scored {text_comp.overall_score:.1%} under unverified developer."
+    else:
+        desc_score = 0.0
+        desc_expl = f"Description reflects authorized product details under matching publisher."
+
     signals.append(SignalResult(
         signal_name="Store Listing Description Overlap",
         category="description",
         score_contribution=desc_score,
         max_weight=settings.WEIGHT_APP_DESCRIPTION,
-        raw_score=text_comp.overall_score,
+        raw_score=text_comp.overall_score if publisher_mismatch else 0.0,
         observed_value=text_comp.candidate_description[:80] + "..." if len(text_comp.candidate_description) > 80 else text_comp.candidate_description,
         target_value=text_comp.brand_description[:80] if text_comp.brand_description else None,
-        explanation=f"Description token overlap and brand keyword presence scored {text_comp.overall_score:.1%}."
+        explanation=desc_expl
     ))
 
     # 4. Publisher mismatch (max 15)
@@ -292,16 +317,21 @@ def calculate_app_risk(
     ))
 
     # 5. Package ID & Brand-keyword signals (max 10)
-    pkg_score = package_signals * settings.WEIGHT_APP_PACKAGE_SIGNALS
-    pkg_expl = f"Package identifier '{package_id}' incorporates brand namespace or imitation pattern." if package_signals > 0.5 else f"Package ID: {package_id}."
-    if package_signals > 0.7:
-        reasons.append(f"Package ID '{package_id}' mimics official namespace without authorization.")
+    if publisher_mismatch:
+        pkg_score = package_signals * settings.WEIGHT_APP_PACKAGE_SIGNALS
+        pkg_expl = f"Package identifier '{package_id}' incorporates brand namespace or imitation pattern." if package_signals > 0.5 else f"Package ID: {package_id}."
+        if package_signals > 0.7:
+            reasons.append(f"Package ID '{package_id}' mimics official namespace without authorization.")
+    else:
+        # Authorized publisher; brand package namespace is official reverse-DNS naming, not unauthorized imitation
+        pkg_score = 0.0
+        pkg_expl = f"Package identifier '{package_id}' belongs to verified brand publisher namespace."
     signals.append(SignalResult(
         signal_name="Package ID / Namespace Imitation",
         category="package",
         score_contribution=pkg_score,
         max_weight=settings.WEIGHT_APP_PACKAGE_SIGNALS,
-        raw_score=package_signals,
+        raw_score=package_signals if publisher_mismatch else 0.0,
         observed_value=package_id,
         target_value="Official Package ID",
         explanation=pkg_expl
@@ -309,16 +339,27 @@ def calculate_app_risk(
 
     # 6. Other corroborating evidence (max 15)
     # E.g. Missing privacy policy, low downloads + high rating anomalies, suspicious permissions, store warnings
-    corroborating_val = corroborating_score * settings.WEIGHT_APP_CORROBORATING
+    if publisher_mismatch:
+        corroborating_val = corroborating_score * settings.WEIGHT_APP_CORROBORATING
+        corroborating_expl = "Suspicious distribution metrics or unverified app developer credentials observed." if corroborating_score > 0.5 else "Standard app store telemetry."
+    else:
+        if metadata.get("suspicious_permissions"):
+            corroborating_val = 5.0
+            corroborating_expl = "Application requests abnormal or suspicious device permissions."
+            reasons.append("Application requests abnormal or suspicious device permissions.")
+        else:
+            corroborating_val = 0.0
+            corroborating_expl = "Verified publisher catalog distribution telemetry."
+
     signals.append(SignalResult(
         signal_name="Listing Telemetry & Security Signals",
         category="telemetry",
         score_contribution=corroborating_val,
         max_weight=settings.WEIGHT_APP_CORROBORATING,
-        raw_score=corroborating_score,
-        observed_value=f"downloads={metadata.get('downloads')}, rating={metadata.get('rating')}",
+        raw_score=corroborating_score if publisher_mismatch else (corroborating_val / settings.WEIGHT_APP_CORROBORATING),
+        observed_value=f"downloads={metadata.get('downloads') or metadata.get('installs')}, rating={metadata.get('rating') or metadata.get('score')}",
         target_value="standard_clean_app",
-        explanation="Suspicious distribution metrics or unverified app developer credentials observed." if corroborating_score > 0.5 else "Standard app store telemetry."
+        explanation=corroborating_expl
     ))
 
     raw_total = sum(s.score_contribution for s in signals)
