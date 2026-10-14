@@ -60,7 +60,7 @@ const CREATORS: Creator[] = [
     dept: 'SecOps & OSINT Intelligence',
     badgeId: 'AEGIS-SEC-0941',
     status: 'ONLINE',
-    photoUrl: 'https://api.dicebear.com/9.x/open-peeps/svg?seed=Joshua&backgroundColor=b6e3f4',
+    photoUrl: '/creators/joshua.jpg',
     specialty: 'Autonomous OSINT collection, APK reverse engineering, and adversary cluster mapping.'
   },
   {
@@ -70,7 +70,7 @@ const CREATORS: Creator[] = [
     dept: 'UX Architecture & Visual Systems',
     badgeId: 'AEGIS-ENG-1182',
     status: 'ACTIVE RECON',
-    photoUrl: 'https://api.dicebear.com/9.x/open-peeps/svg?seed=Piyush&backgroundColor=c0aede',
+    photoUrl: '/creators/piyush.jpg',
     specialty: 'High-density threat telemetry dashboards, low-latency WebGL visualization, and champagne ergonomics.'
   },
   {
@@ -80,7 +80,7 @@ const CREATORS: Creator[] = [
     dept: 'Brand Abuse Enforcement',
     badgeId: 'AEGIS-LEG-8840',
     status: 'ONLINE',
-    photoUrl: 'https://api.dicebear.com/9.x/open-peeps/svg?seed=Adarsh&backgroundColor=d1d4f9',
+    photoUrl: '/creators/adarsh.jpg',
     specialty: 'Automated DMCA pipelines, registrar takedown protocols, and cross-jurisdictional brand protection.'
   },
   {
@@ -90,7 +90,7 @@ const CREATORS: Creator[] = [
     dept: 'Social Vector Intelligence',
     badgeId: 'AEGIS-INT-5521',
     status: 'FIELD OPS',
-    photoUrl: 'https://api.dicebear.com/9.x/open-peeps/svg?seed=Sumit&backgroundColor=ffd5dc',
+    photoUrl: '/creators/sumit.jpg',
     specialty: 'Detecting synthetic VIP social impersonation, fraud networks, and weaponized AI clone accounts.'
   },
   {
@@ -100,7 +100,7 @@ const CREATORS: Creator[] = [
     dept: 'Autonomous AI Defense',
     badgeId: 'AEGIS-SYS-4490',
     status: 'ONLINE',
-    photoUrl: 'https://api.dicebear.com/9.x/open-peeps/svg?seed=Ravneet&backgroundColor=ffdfbf',
+    photoUrl: '/creators/ravneet.jpg',
     specialty: 'Distributed edge intelligence, zero-latency sensor fabrics, and automated incident containment.'
   }
 ];
